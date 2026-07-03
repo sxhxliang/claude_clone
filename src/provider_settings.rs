@@ -5,10 +5,9 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
+    Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonRounded, ButtonVariants as _},
     collapsible::Collapsible,
-    dialog::{DialogFooter, DialogHeader, DialogTitle},
     h_flex,
     input::{Input, InputEvent, InputState},
     notification::Notification,
@@ -208,6 +207,20 @@ fn short_url(url: &str) -> String {
         .or_else(|| trimmed.strip_prefix("http://"))
         .unwrap_or(trimmed)
         .to_string()
+}
+
+fn compact_error_message(error: &str) -> SharedString {
+    const MAX_CHARS: usize = 240;
+
+    let compact = error.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = compact.chars();
+    let shortened: String = chars.by_ref().take(MAX_CHARS).collect();
+
+    if chars.next().is_some() {
+        format!("{shortened}...").into()
+    } else {
+        compact.into()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -529,80 +542,6 @@ impl ProviderSettings {
             self.selected_provider_id = None;
         }
         cx.notify();
-    }
-
-    fn confirm_delete_selected(
-        &mut self,
-        provider_id: usize,
-        provider_name: SharedString,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let settings = cx.entity().downgrade();
-        window.open_dialog(cx, move |dialog, _, _| {
-            let settings = settings.clone();
-            let provider_name = provider_name.clone();
-            dialog.w(px(440.)).p_0().content(move |content, _, cx| {
-                content
-                    .child(
-                        DialogHeader::new()
-                            .px_5()
-                            .py_4()
-                            .border_b_1()
-                            .border_color(cx.theme().border)
-                            .child(DialogTitle::new().child(crate::tr!("provider.delete_title"))),
-                    )
-                    .child(
-                        v_flex()
-                            .px_5()
-                            .py_4()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .text_color(text_color())
-                                    .child(crate::tr!("provider.delete_body")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(text_3())
-                                    .truncate()
-                                    .child(provider_name.clone()),
-                            ),
-                    )
-                    .child(
-                        DialogFooter::new()
-                            .px_5()
-                            .py_3p5()
-                            .border_t_1()
-                            .border_color(cx.theme().border)
-                            .child(
-                                Button::new("cancel-delete-provider")
-                                    .label(crate::tr!("common.cancel"))
-                                    .on_click(|_, window, cx| {
-                                        window.close_dialog(cx);
-                                    }),
-                            )
-                            .child(
-                                Button::new("confirm-delete-provider")
-                                    .primary()
-                                    .label(crate::tr!("common.delete"))
-                                    .on_click({
-                                        let settings = settings.clone();
-                                        move |_, window, cx| {
-                                            window.close_dialog(cx);
-                                            if let Some(settings) = settings.upgrade() {
-                                                settings.update(cx, |settings, cx| {
-                                                    settings.delete_selected_now(provider_id, cx);
-                                                });
-                                            }
-                                        }
-                                    }),
-                            ),
-                    )
-            })
-        });
     }
 
     fn toggle_reveal_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -962,13 +901,10 @@ impl ProviderSettings {
     fn render_provider_kind_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut row = h_flex()
             .w_full()
-            .max_h(px(132.))
-            .overflow_y_scrollbar()
-            .flex_wrap()
             .gap_1()
-            .p_1()
-            .rounded(px(14.))
-            .bg(muted_surface());
+            .flex_wrap()
+            .items_center()
+            .content_start();
 
         for kind in ProviderKind::all().iter().copied() {
             let selected = self.new_kind == kind;
@@ -977,7 +913,7 @@ impl ProviderSettings {
                 kind.label()
             )))
             .xsmall()
-            .min_w(px(108.))
+            .min_w(px(88.))
             .rounded(ButtonRounded::Large)
             .label(kind.label())
             .tooltip(kind_caption(kind))
@@ -991,7 +927,15 @@ impl ProviderSettings {
             })));
         }
 
-        row
+        div()
+            .w_full()
+            .min_w_0()
+            .h(px(78.))
+            .p_1()
+            .rounded(px(14.))
+            .bg(muted_surface())
+            .overflow_y_scrollbar()
+            .child(row)
     }
 
     fn render_model_row(
@@ -1249,11 +1193,6 @@ impl ProviderSettings {
         let url_dirty = provider
             .as_ref()
             .is_some_and(|provider| provider.base_url.trim() != url_value);
-        let delete_provider_name: SharedString = provider
-            .as_ref()
-            .map(|provider| provider.kind.label().to_string())
-            .unwrap_or_else(|| self.new_kind.label().to_string())
-            .into();
         let header_subtitle = provider
             .as_ref()
             .map(|provider| {
@@ -1304,48 +1243,24 @@ impl ProviderSettings {
             }
         }
 
-        // -- Key field suffix: reveal toggle + 检测 button.
+        // -- Key field suffix: reveal toggle.
         let key_suffix = Some(
-            h_flex()
-                .gap_1()
-                .items_center()
-                .child(
-                    Button::new("provider-key-eye")
-                        .ghost()
-                        .small()
-                        .icon(if self.key_revealed {
-                            IconName::EyeOff
-                        } else {
-                            IconName::Eye
-                        })
-                        .tooltip(if self.key_revealed {
-                            crate::tr!("provider.hide_key")
-                        } else {
-                            crate::tr!("provider.show_key")
-                        })
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.toggle_reveal_key(window, cx);
-                        })),
-                )
-                .when_some(provider_id, |this, provider_id| {
-                    this.child(
-                        Button::new("provider-key-test")
-                            .ghost()
-                            .small()
-                            .icon(IconName::LoaderCircle)
-                            .label(if is_fetching {
-                                crate::tr!("provider.syncing")
-                            } else {
-                                crate::tr!("provider.test")
-                            })
-                            .loading(is_fetching)
-                            .disabled(is_fetching)
-                            .tooltip(crate::tr!("provider.sync_current"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.fetch_models(provider_id, window, cx);
-                            })),
-                    )
+            Button::new("provider-key-eye")
+                .ghost()
+                .small()
+                .icon(if self.key_revealed {
+                    IconName::EyeOff
+                } else {
+                    IconName::Eye
                 })
+                .tooltip(if self.key_revealed {
+                    crate::tr!("provider.hide_key")
+                } else {
+                    crate::tr!("provider.show_key")
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.toggle_reveal_key(window, cx);
+                }))
                 .into_any_element(),
         );
 
@@ -1420,16 +1335,8 @@ impl ProviderSettings {
                                         .small()
                                         .icon(IconName::CircleX)
                                         .tooltip(crate::tr!("provider.delete_tooltip"))
-                                        .on_click(cx.listener({
-                                            let delete_provider_name = delete_provider_name.clone();
-                                            move |this, _, window, cx| {
-                                                this.confirm_delete_selected(
-                                                    provider_id,
-                                                    delete_provider_name.clone(),
-                                                    window,
-                                                    cx,
-                                                );
-                                            }
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.delete_selected_now(provider_id, cx);
                                         })),
                                 )
                             })
@@ -1493,26 +1400,32 @@ impl ProviderSettings {
                                 h_flex()
                                     .items_center()
                                     .justify_between()
+                                    .gap_2()
                                     .child(
                                         self.render_field_label(
                                             crate::tr!("provider.api_key"),
                                             None,
                                         ),
                                     )
-                                    .when(key_empty, |this| {
-                                        this.child(self.render_badge(
-                                            crate::tr!("provider.missing"),
-                                            warning_bg(),
-                                            warning_text(),
-                                        ))
-                                    })
-                                    .when(key_dirty, |this| {
-                                        this.child(self.render_badge(
-                                            crate::tr!("provider.unsaved"),
-                                            warning_bg(),
-                                            warning_text(),
-                                        ))
-                                    }),
+                                    .child(
+                                        h_flex()
+                                            .gap_1p5()
+                                            .items_center()
+                                            .when(key_empty, |this| {
+                                                this.child(self.render_badge(
+                                                    crate::tr!("provider.missing"),
+                                                    warning_bg(),
+                                                    warning_text(),
+                                                ))
+                                            })
+                                            .when(key_dirty, |this| {
+                                                this.child(self.render_badge(
+                                                    crate::tr!("provider.unsaved"),
+                                                    warning_bg(),
+                                                    warning_text(),
+                                                ))
+                                            }),
+                                    ),
                             )
                             .child(self.render_input_box(&self.key_input, key_suffix))
                             .child(
@@ -1529,11 +1442,42 @@ impl ProviderSettings {
                                 h_flex()
                                     .items_center()
                                     .justify_between()
+                                    .gap_2()
                                     .child(
-                                        self.render_field_label(
-                                            crate::tr!("provider.api_url"),
-                                            None,
-                                        ),
+                                        h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(self.render_field_label(
+                                                crate::tr!("provider.api_url"),
+                                                None,
+                                            ))
+                                            .when_some(provider_id, |this, provider_id| {
+                                                this.child(
+                                                    Button::new("provider-key-test")
+                                                        .ghost()
+                                                        .small()
+                                                        .icon(IconName::LoaderCircle)
+                                                        .label(if is_fetching {
+                                                            crate::tr!("provider.syncing")
+                                                        } else {
+                                                            crate::tr!("provider.test")
+                                                        })
+                                                        .loading(is_fetching)
+                                                        .disabled(is_fetching)
+                                                        .tooltip(crate::tr!(
+                                                            "provider.sync_current"
+                                                        ))
+                                                        .on_click(cx.listener(
+                                                            move |this, _, window, cx| {
+                                                                this.fetch_models(
+                                                                    provider_id,
+                                                                    window,
+                                                                    cx,
+                                                                );
+                                                            },
+                                                        )),
+                                                )
+                                            }),
                                     )
                                     .when(using_default_url, |this| {
                                         this.child(self.render_badge(
@@ -1719,11 +1663,19 @@ impl ProviderSettings {
                         .px_3()
                         .py_2()
                         .gap_2()
-                        .items_center()
+                        .items_start()
                         .text_size(px(12.))
                         .text_color(accent())
-                        .child(Icon::new(IconName::TriangleAlert).small())
-                        .child(error),
+                        .child(Icon::new(IconName::TriangleAlert).small().flex_shrink_0())
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .max_h(px(48.))
+                                .overflow_y_scrollbar()
+                                .whitespace_normal()
+                                .child(compact_error_message(error.as_ref())),
+                        ),
                 )
             })
     }
