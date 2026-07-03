@@ -11,6 +11,7 @@ use gpui_component::{
     dock::{Panel, PanelEvent, PanelInfo, PanelState, TabPanel},
     h_flex,
     input::{Input, InputEvent, InputState},
+    menu::{PopupMenu, PopupMenuItem},
     notification::Notification,
     popover::Popover,
     scroll::{ScrollableElement as _, Scrollbar},
@@ -20,7 +21,6 @@ use gpui_component::{
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
 
-use crate::ClaudeApp;
 use crate::chat_view::{
     self, ArtifactHighlightTarget, ChatViewState, GeneratedImage, ImageAttachment, MessageBlock,
     ToolCall, ToolStep,
@@ -39,6 +39,7 @@ use crate::theme::{
     accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
     text_color, white_color,
 };
+use crate::{ClaudeApp, ConversationTabCloseScope};
 
 pub(crate) const PANEL_NAME: &str = "ClaudeConversationPanel";
 
@@ -2633,6 +2634,67 @@ impl Panel for ConversationPanel {
                 app.update(cx, |app, cx| app.mark_conversation_panel_closed(id, cx));
             });
         }
+    }
+
+    fn dropdown_menu(
+        &mut self,
+        menu: PopupMenu,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> PopupMenu {
+        let id = self.id;
+        let app = self.app.clone();
+
+        menu.item(
+            PopupMenuItem::new(crate::tr!("menu.close_other_conversations")).on_click({
+                let app = app.clone();
+                move |_, window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |app, cx| {
+                            app.close_conversation_tabs(
+                                id,
+                                ConversationTabCloseScope::Others,
+                                window,
+                                cx,
+                            );
+                        });
+                    }
+                }
+            }),
+        )
+        .item(
+            PopupMenuItem::new(crate::tr!("menu.close_left_conversations")).on_click({
+                let app = app.clone();
+                move |_, window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |app, cx| {
+                            app.close_conversation_tabs(
+                                id,
+                                ConversationTabCloseScope::Left,
+                                window,
+                                cx,
+                            );
+                        });
+                    }
+                }
+            }),
+        )
+        .item(
+            PopupMenuItem::new(crate::tr!("menu.close_right_conversations")).on_click(
+                move |_, window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |app, cx| {
+                            app.close_conversation_tabs(
+                                id,
+                                ConversationTabCloseScope::Right,
+                                window,
+                                cx,
+                            );
+                        });
+                    }
+                },
+            ),
+        )
     }
 
     fn dump(&self, _cx: &App) -> PanelState {

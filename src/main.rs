@@ -5,7 +5,7 @@ use gpui_component::{
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     dock::{
-        DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, PanelInfo, PanelStyle,
+        DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, Panel, PanelInfo, PanelStyle,
         PanelView, TabPanel, register_panel,
     },
     h_flex,
@@ -74,6 +74,13 @@ const DOCK_LAYOUT_VERSION: usize = 1;
 const SAVE_LAYOUT_DEBOUNCE: Duration = Duration::from_millis(750);
 const DEFAULT_UPDATE_REPO_OWNER: &str = "sxhxliang";
 const DEFAULT_UPDATE_REPO_NAME: &str = "claude_clone";
+
+#[derive(Clone, Copy)]
+pub(crate) enum ConversationTabCloseScope {
+    Others,
+    Left,
+    Right,
+}
 
 pub struct ClaudeApp {
     title_input: Entity<InputState>,
@@ -650,6 +657,83 @@ impl ClaudeApp {
             .map(|tab_panel| tab_panel.downgrade())
             .or_else(|| panel_entity.read(cx).tab_panel.clone());
         self.open_conversation_ids.insert(id);
+    }
+
+    pub(crate) fn conversation_tab_close_targets(
+        &self,
+        id: usize,
+        scope: ConversationTabCloseScope,
+        cx: &App,
+    ) -> Vec<usize> {
+        let Some(tab_panel) = self
+            .conversation_panels
+            .get(&id)
+            .and_then(|panel| panel.read(cx).tab_panel.clone())
+            .and_then(|tab_panel| tab_panel.upgrade())
+        else {
+            return Vec::new();
+        };
+
+        let state = tab_panel.read(cx).dump(cx);
+        let Some(current_ix) = state.children.iter().position(|child| {
+            Self::conversation_panel_layout(&child.info)
+                .is_some_and(|layout| layout.conversation_id == id)
+        }) else {
+            return Vec::new();
+        };
+
+        let left = state.children[..current_ix]
+            .iter()
+            .filter_map(|child| Self::conversation_panel_layout(&child.info))
+            .map(|layout| layout.conversation_id);
+        let right = state.children[current_ix + 1..]
+            .iter()
+            .filter_map(|child| Self::conversation_panel_layout(&child.info))
+            .map(|layout| layout.conversation_id);
+
+        match scope {
+            ConversationTabCloseScope::Others => right.chain(left.rev()).collect(),
+            ConversationTabCloseScope::Left => left.rev().collect(),
+            ConversationTabCloseScope::Right => right.collect(),
+        }
+    }
+
+    pub(crate) fn close_conversation_tabs(
+        &mut self,
+        id: usize,
+        scope: ConversationTabCloseScope,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_active_conversation();
+
+        let target_ids = self.conversation_tab_close_targets(id, scope, cx);
+        if target_ids.is_empty() {
+            return;
+        }
+
+        let panel_views = target_ids
+            .iter()
+            .filter_map(|target_id| {
+                self.open_conversation_ids.remove(target_id);
+                self.conversation_panels
+                    .get(target_id)
+                    .cloned()
+                    .map(|panel| Arc::new(panel) as Arc<dyn PanelView>)
+            })
+            .collect::<Vec<_>>();
+
+        if panel_views.is_empty() {
+            return;
+        }
+
+        self.dock_area.update(cx, |dock_area, cx| {
+            for panel_view in panel_views {
+                dock_area.remove_panel_from_all_docks(panel_view, window, cx);
+            }
+        });
+        self.save_state(cx);
+        cx.notify();
     }
 
     fn open_conversation_panel(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
