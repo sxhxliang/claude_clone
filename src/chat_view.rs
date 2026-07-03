@@ -5,8 +5,8 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, Context, Div, Entity, Hsla, InteractiveElement as _, IntoElement, ObjectFit,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled, StyledImage as _,
-    Window, div, hsla, img, linear_color_stop, linear_gradient, px, relative,
+    ParentElement as _, ScrollAnchor, SharedString, StatefulInteractiveElement as _, Styled,
+    StyledImage as _, Window, div, hsla, img, linear_color_stop, linear_gradient, px, relative,
 };
 use gpui_component::{
     Icon, IconName, WindowExt as _, h_flex,
@@ -33,6 +33,12 @@ pub trait ChatViewState: Sized + 'static {
     fn pending(&self) -> bool;
     fn mode(&self) -> ChatMode;
     fn branch_origin(&self) -> Option<&BranchOrigin>;
+    fn highlighted_artifact_target(&self) -> Option<ArtifactHighlightTarget> {
+        None
+    }
+    fn message_scroll_anchor(&self, _ix: usize) -> Option<ScrollAnchor> {
+        None
+    }
     fn open_image_viewer(
         &self,
         image: ImageAttachment,
@@ -87,6 +93,19 @@ pub enum MessageBlock {
     GeneratedImage(GeneratedImage),
     /// Collapsible tool-invocation block.
     Tool(ToolCall),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ArtifactHighlightTarget {
+    pub(crate) message_ix: usize,
+    pub(crate) kind: ArtifactHighlightKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArtifactHighlightKind {
+    Attachment { attachment_ix: usize },
+    GeneratedImage { block_ix: usize },
+    ToolFile { tool_ix: usize, step_ix: usize },
 }
 
 #[derive(Clone)]
@@ -185,12 +204,27 @@ pub fn render<T: ChatViewState>(app: &T, cx: &mut Context<T>) -> impl IntoElemen
         })
         .children(messages.into_iter().enumerate().flat_map(|(ix, m)| {
             let mut elements = Vec::with_capacity(2);
+            let highlighted_artifact = app.highlighted_artifact_target();
+            let scroll_anchor = app.message_scroll_anchor(ix);
             elements.push(match m.role {
-                ChatRole::User => {
-                    render_user_message(ix, &m, user_expanded.get(ix).copied().unwrap_or(false), cx)
-                        .into_any_element()
-                }
-                ChatRole::Ai => render_ai_message(ix, &m, &tool_expanded, cx).into_any_element(),
+                ChatRole::User => render_user_message(
+                    ix,
+                    &m,
+                    user_expanded.get(ix).copied().unwrap_or(false),
+                    highlighted_artifact,
+                    scroll_anchor,
+                    cx,
+                )
+                .into_any_element(),
+                ChatRole::Ai => render_ai_message(
+                    ix,
+                    &m,
+                    &tool_expanded,
+                    highlighted_artifact,
+                    scroll_anchor,
+                    cx,
+                )
+                .into_any_element(),
             });
 
             if branch_insert_ix == Some(ix + 1) {
@@ -262,14 +296,18 @@ fn render_user_message<T: ChatViewState>(
     ix: usize,
     msg: &ChatMessage,
     expanded: bool,
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
+    scroll_anchor: Option<ScrollAnchor>,
     cx: &mut Context<T>,
-) -> Div {
+) -> impl IntoElement {
     let content = msg.content.clone();
     let long = content.chars().count() > 320;
     let bubble_bg = user_bubble_bg();
     let group_id = format!("user-message-{ix}");
 
     v_flex()
+        .id(("chat-message", ix))
+        .anchor_scroll(scroll_anchor)
         .group(group_id.clone())
         .items_end()
         .child(
@@ -282,7 +320,12 @@ fn render_user_message<T: ChatViewState>(
                 .py_3()
                 .gap_2()
                 .when(!msg.attachments.is_empty(), |this| {
-                    this.child(render_user_attachments(ix, &msg.attachments, cx))
+                    this.child(render_user_attachments(
+                        ix,
+                        &msg.attachments,
+                        highlighted_artifact,
+                        cx,
+                    ))
                 })
                 .when(!content.is_empty(), |this| {
                     this.child(
@@ -331,15 +374,21 @@ fn render_user_message<T: ChatViewState>(
 fn render_user_attachments<T: ChatViewState>(
     msg_ix: usize,
     attachments: &[ImageAttachment],
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
     cx: &mut Context<T>,
 ) -> Div {
     let mut row = h_flex().gap_2().flex_wrap();
     for (ix, attachment) in attachments.iter().enumerate() {
+        let highlighted = highlighted_artifact.is_some_and(|target| {
+            target.message_ix == msg_ix
+                && target.kind == ArtifactHighlightKind::Attachment { attachment_ix: ix }
+        });
         row = row.child(render_attachment_thumbnail(
             format!("user-image-{msg_ix}-{ix}"),
             attachment,
             px(142.),
             px(96.),
+            highlighted,
             cx,
         ));
     }
@@ -350,8 +399,10 @@ fn render_ai_message<T: ChatViewState>(
     ix: usize,
     msg: &ChatMessage,
     tool_expanded: &HashMap<(usize, usize), bool>,
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
+    scroll_anchor: Option<ScrollAnchor>,
     cx: &mut Context<T>,
-) -> Div {
+) -> impl IntoElement {
     let mode = msg.mode;
     let model = msg.model.clone();
     let header = h_flex()
@@ -366,7 +417,7 @@ fn render_ai_message<T: ChatViewState>(
         )));
 
     let body = if let Some(blocks) = &msg.blocks {
-        render_blocks(ix, blocks, tool_expanded, cx)
+        render_blocks(ix, blocks, tool_expanded, highlighted_artifact, cx)
     } else {
         v_flex().gap_3().child(
             div()
@@ -386,14 +437,17 @@ fn render_ai_message<T: ChatViewState>(
     };
     let group_id = format!("ai-message-{ix}");
 
-    div().child(
-        v_flex()
-            .group(group_id.clone())
-            .items_start()
-            .child(header)
-            .child(body)
-            .child(render_ai_actions(ix, group_id, cx)),
-    )
+    div()
+        .id(("chat-message", ix))
+        .anchor_scroll(scroll_anchor)
+        .child(
+            v_flex()
+                .group(group_id.clone())
+                .items_start()
+                .child(header)
+                .child(body)
+                .child(render_ai_actions(ix, group_id, cx)),
+        )
 }
 
 fn render_ai_actions<T: ChatViewState>(
@@ -520,6 +574,7 @@ fn render_blocks<T: ChatViewState>(
     msg_ix: usize,
     blocks: &[MessageBlock],
     tool_expanded: &HashMap<(usize, usize), bool>,
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
     cx: &mut Context<T>,
 ) -> Div {
     let mut col = v_flex().gap_3().w_full().max_w(px(700.));
@@ -536,11 +591,16 @@ fn render_blocks<T: ChatViewState>(
                 .child(TextView::new(state).selectable(true))
                 .into_any_element(),
             MessageBlock::GeneratedImage(image) => {
-                render_generated_image(msg_ix, ix, image, cx).into_any_element()
+                let highlighted = highlighted_artifact.is_some_and(|target| {
+                    target.message_ix == msg_ix
+                        && target.kind == ArtifactHighlightKind::GeneratedImage { block_ix: ix }
+                });
+                render_generated_image(msg_ix, ix, image, highlighted, cx).into_any_element()
             }
             MessageBlock::Tool(tc) => {
                 let expanded = tool_expanded.get(&(msg_ix, ix)).copied().unwrap_or(true);
-                render_tool_call(msg_ix, ix, tc, expanded, cx).into_any_element()
+                render_tool_call(msg_ix, ix, tc, expanded, highlighted_artifact, cx)
+                    .into_any_element()
             }
         };
         col = col.child(el);
@@ -723,6 +783,7 @@ fn render_generated_image<T: ChatViewState>(
     msg_ix: usize,
     block_ix: usize,
     image: &GeneratedImage,
+    highlighted: bool,
     cx: &mut Context<T>,
 ) -> impl IntoElement {
     let title = image.title.clone();
@@ -750,6 +811,7 @@ fn render_generated_image<T: ChatViewState>(
         .overflow_hidden()
         .border_1()
         .border_color(border_color())
+        .when(highlighted, |this| this.border_2().border_color(accent()))
         .bg(white_color())
         .shadow_sm()
         .child(
@@ -826,6 +888,7 @@ fn render_attachment_thumbnail<T: ChatViewState>(
     attachment: &ImageAttachment,
     width: gpui::Pixels,
     height: gpui::Pixels,
+    highlighted: bool,
     cx: &mut Context<T>,
 ) -> impl IntoElement {
     let title = attachment.title.clone();
@@ -849,6 +912,7 @@ fn render_attachment_thumbnail<T: ChatViewState>(
                     .overflow_hidden()
                     .border_1()
                     .border_color(border_color())
+                    .when(highlighted, |this| this.border_2().border_color(accent()))
                     .bg(file_chip_bg())
                     .child(render_document_attachment_preview(attachment))
                     .when_some(local_path.clone(), |this, path| {
@@ -908,6 +972,7 @@ fn render_attachment_thumbnail<T: ChatViewState>(
                 .overflow_hidden()
                 .border_1()
                 .border_color(border_color())
+                .when(highlighted, |this| this.border_2().border_color(accent()))
                 .bg(file_chip_bg())
                 .child(render_attachment_image(attachment))
                 .cursor_pointer()
@@ -1249,6 +1314,7 @@ fn render_tool_call<T: ChatViewState>(
     tool_ix: usize,
     tool: &ToolCall,
     expanded: bool,
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
     cx: &mut Context<T>,
 ) -> Div {
     let header_id: SharedString = format!("tool-hdr-{}-{}", msg_ix, tool_ix).into();
@@ -1280,7 +1346,17 @@ fn render_tool_call<T: ChatViewState>(
             .steps
             .iter()
             .enumerate()
-            .map(|(i, step)| render_tool_step(step, msg_ix, tool_ix, i, i == last_ix, cx))
+            .map(|(i, step)| {
+                render_tool_step(
+                    step,
+                    msg_ix,
+                    tool_ix,
+                    i,
+                    i == last_ix,
+                    highlighted_artifact,
+                    cx,
+                )
+            })
             .collect::<Vec<_>>();
         col.children(steps)
     });
@@ -1294,6 +1370,7 @@ fn render_tool_step<T: ChatViewState>(
     tool_ix: usize,
     step_ix: usize,
     last: bool,
+    highlighted_artifact: Option<ArtifactHighlightTarget>,
     cx: &mut Context<T>,
 ) -> Div {
     let line_color: Hsla = timeline_line();
@@ -1349,6 +1426,10 @@ fn render_tool_step<T: ChatViewState>(
                 .when_some(step.file_chip.clone(), |this, chip| {
                     let chip_label = chip.clone();
                     let chip_id = msg_ix * 1_000_000 + tool_ix * 1_000 + step_ix;
+                    let highlighted = highlighted_artifact.is_some_and(|target| {
+                        target.message_ix == msg_ix
+                            && target.kind == ArtifactHighlightKind::ToolFile { tool_ix, step_ix }
+                    });
                     this.child(
                         h_flex()
                             .id(("file-chip", chip_id))
@@ -1357,6 +1438,9 @@ fn render_tool_step<T: ChatViewState>(
                             .px_2()
                             .py_0p5()
                             .rounded_md()
+                            .border_1()
+                            .border_color(if highlighted { accent() } else { chip_bg })
+                            .when(highlighted, |this| this.border_2())
                             .bg(chip_bg)
                             .text_size(px(11.5))
                             .text_color(text_2())

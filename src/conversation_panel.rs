@@ -22,7 +22,8 @@ use std::path::{Path as FsPath, PathBuf};
 
 use crate::ClaudeApp;
 use crate::chat_view::{
-    self, ChatViewState, GeneratedImage, ImageAttachment, MessageBlock, ToolCall, ToolStep,
+    self, ArtifactHighlightTarget, ChatViewState, GeneratedImage, ImageAttachment, MessageBlock,
+    ToolCall, ToolStep,
 };
 use crate::document_parser;
 use crate::genai_backend::{
@@ -32,6 +33,7 @@ use crate::menus::{add_menu_content, mcp_menu_content, model_menu_content};
 use crate::mock_backend;
 use crate::models::{
     BranchOrigin, ChatMessage, ChatMode, ChatRole, Conversation, ConversationPanelLayout,
+    current_time_ms,
 };
 use crate::theme::{
     accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
@@ -43,6 +45,7 @@ pub(crate) const PANEL_NAME: &str = "ClaudeConversationPanel";
 pub(crate) struct ConversationPanel {
     focus_handle: FocusHandle,
     chat_scroll_handle: ScrollHandle,
+    message_scroll_anchors: Vec<ScrollAnchor>,
     app: WeakEntity<ClaudeApp>,
     pub(crate) tab_panel: Option<WeakEntity<TabPanel>>,
     pub(crate) id: usize,
@@ -57,6 +60,7 @@ pub(crate) struct ConversationPanel {
     messages: Vec<ChatMessage>,
     pending_images: Vec<ImageAttachment>,
     editing_user_ix: Option<usize>,
+    highlighted_artifact_target: Option<ArtifactHighlightTarget>,
     cowork_user_expanded: Vec<bool>,
     tool_expanded: HashMap<(usize, usize), bool>,
     input: Entity<InputState>,
@@ -100,10 +104,15 @@ impl ConversationPanel {
             .map(|message| message.mode)
             .unwrap_or(ChatMode::Chat);
         Self::hydrate_chat_message_blocks(&mut conversation.messages, cx);
+        let chat_scroll_handle = ScrollHandle::new();
+        let message_scroll_anchors = (0..conversation.messages.len())
+            .map(|_| ScrollAnchor::for_handle(chat_scroll_handle.clone()))
+            .collect();
 
         Self {
             focus_handle,
-            chat_scroll_handle: ScrollHandle::new(),
+            chat_scroll_handle,
+            message_scroll_anchors,
             app,
             tab_panel: None,
             id: conversation.id,
@@ -118,6 +127,7 @@ impl ConversationPanel {
             messages: conversation.messages,
             pending_images: Vec::new(),
             editing_user_ix: None,
+            highlighted_artifact_target: None,
             cowork_user_expanded: conversation.cowork_user_expanded,
             tool_expanded: conversation.tool_expanded,
             input,
@@ -170,6 +180,36 @@ impl ConversationPanel {
         } else {
             self.title.clone()
         }
+    }
+
+    fn ensure_message_scroll_anchors(&mut self) {
+        let target_len = self.messages.len();
+        if self.message_scroll_anchors.len() > target_len {
+            self.message_scroll_anchors.truncate(target_len);
+        }
+        while self.message_scroll_anchors.len() < target_len {
+            self.message_scroll_anchors
+                .push(ScrollAnchor::for_handle(self.chat_scroll_handle.clone()));
+        }
+    }
+
+    pub(crate) fn reveal_artifact(
+        &mut self,
+        target: ArtifactHighlightTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if target.message_ix >= self.messages.len() {
+            window.push_notification(Notification::info("Source message not found"), cx);
+            return;
+        }
+
+        self.ensure_message_scroll_anchors();
+        self.highlighted_artifact_target = Some(target);
+        if let Some(anchor) = self.message_scroll_anchors.get(target.message_ix) {
+            anchor.scroll_to(window, cx);
+        }
+        cx.notify();
     }
 
     pub(crate) fn snapshot(&self) -> Conversation {
@@ -311,6 +351,7 @@ impl ConversationPanel {
             thinking: SharedString::default(),
             model,
             mode,
+            created_at_ms: Some(current_time_ms()),
             attachments: Vec::new(),
             blocks: None,
         });
@@ -352,6 +393,7 @@ impl ConversationPanel {
             thinking: SharedString::default(),
             model,
             mode,
+            created_at_ms: Some(current_time_ms()),
             attachments: Vec::new(),
             blocks: Some(blocks),
         });
@@ -368,6 +410,7 @@ impl ConversationPanel {
             thinking: SharedString::default(),
             model,
             mode,
+            created_at_ms: Some(current_time_ms()),
             attachments: Vec::new(),
             blocks: Some(Vec::new()),
         });
@@ -737,6 +780,7 @@ impl ConversationPanel {
                     message.thinking = SharedString::default();
                     message.model = model.clone();
                     message.mode = mode;
+                    message.created_at_ms = Some(current_time_ms());
                     message.attachments = attachments;
                     message.blocks = None;
                 }
@@ -756,6 +800,7 @@ impl ConversationPanel {
             thinking: SharedString::default(),
             model: model.clone(),
             mode,
+            created_at_ms: Some(current_time_ms()),
             attachments: attachments.clone(),
             blocks: None,
         });
@@ -961,6 +1006,7 @@ impl ConversationPanel {
                     thinking: SharedString::default(),
                     model,
                     mode,
+                    created_at_ms: Some(current_time_ms()),
                     attachments: Vec::new(),
                     blocks,
                 });
@@ -1053,6 +1099,7 @@ impl ConversationPanel {
         cx.notify();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_delete_undo_notification(
         &self,
         label: &'static str,
@@ -2214,6 +2261,14 @@ impl ChatViewState for ConversationPanel {
         self.branch_origin.as_ref()
     }
 
+    fn highlighted_artifact_target(&self) -> Option<ArtifactHighlightTarget> {
+        self.highlighted_artifact_target
+    }
+
+    fn message_scroll_anchor(&self, ix: usize) -> Option<ScrollAnchor> {
+        self.message_scroll_anchors.get(ix).cloned()
+    }
+
     fn open_image_viewer(
         &self,
         image: ImageAttachment,
@@ -2580,6 +2635,7 @@ impl Focusable for ConversationPanel {
 
 impl Render for ConversationPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_message_scroll_anchors();
         let empty = self.messages.is_empty() && !self.pending;
         v_flex()
             .id(("conversation-panel", self.id))

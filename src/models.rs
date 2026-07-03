@@ -2,6 +2,7 @@
 //! conversation type, the persisted `Conversation` record, and app-wide
 //! `AppSettings`.
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::SharedString;
 use gpui_component::{IconName, dock::DockAreaState};
@@ -23,10 +24,18 @@ pub struct ChatMessage {
     pub thinking: SharedString,
     pub model: SharedString,
     pub mode: ChatMode,
+    pub created_at_ms: Option<u64>,
     pub attachments: Vec<ImageAttachment>,
     /// When present, the AI message renders as a structured block list
     /// (used for `ChatMode::Cowork`). When `None`, falls back to plain `content`.
     pub blocks: Option<Vec<MessageBlock>>,
+}
+
+pub(crate) fn current_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 #[derive(Clone)]
@@ -439,6 +448,8 @@ struct StoredChatMessage {
     thinking: String,
     model: String,
     mode: ChatMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    created_at_ms: Option<u64>,
     #[serde(default)]
     attachments: Vec<ImageAttachment>,
 }
@@ -451,6 +462,7 @@ impl From<&ChatMessage> for StoredChatMessage {
             thinking: message.thinking.to_string(),
             model: message.model.to_string(),
             mode: message.mode,
+            created_at_ms: message.created_at_ms,
             attachments: message.attachments.clone(),
         }
     }
@@ -464,6 +476,7 @@ impl From<StoredChatMessage> for ChatMessage {
             thinking: message.thinking.into(),
             model: message.model.into(),
             mode: message.mode,
+            created_at_ms: message.created_at_ms,
             attachments: message.attachments,
             blocks: None,
         }

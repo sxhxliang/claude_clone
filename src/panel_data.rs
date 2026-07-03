@@ -95,12 +95,16 @@ fn conversation_detail(conversation: &ConversationFacts) -> String {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) enum ArtifactFilter {
     All,
     Images,
     Files,
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 impl ArtifactFilter {
     pub(crate) const ALL: [ArtifactFilter; 3] = [
         ArtifactFilter::All,
@@ -126,17 +130,23 @@ impl ArtifactFilter {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) enum ArtifactKind {
     Image,
     File,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) struct ArtifactFacts {
     pub(crate) conversation_id: usize,
     pub(crate) kind: ArtifactKind,
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn filter_artifacts(
     items: &[ArtifactFacts],
     filter: ArtifactFilter,

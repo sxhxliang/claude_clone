@@ -3,7 +3,7 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{InteractiveElement as _, StatefulInteractiveElement as _, *};
 use gpui_component::{
-    ActiveTheme as _, Icon, IconName, Selectable as _, Sizable as _, WindowExt as _,
+    ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     dock::{Panel, PanelEvent},
@@ -17,12 +17,13 @@ use gpui_component::{
 use std::collections::HashSet;
 
 use crate::ClaudeApp;
-use crate::chat_view::{self, ImageAttachment, MessageBlock};
+use crate::chat_view::{
+    self, ArtifactHighlightKind, ArtifactHighlightTarget, ImageAttachment, MessageBlock,
+};
 use crate::menus::menu_item;
-use crate::models::{ChatMode, Conversation, Project};
+use crate::models::{ChatMode, Conversation, Project, current_time_ms};
 use crate::panel_data::{
-    ArtifactFacts, ArtifactFilter, ArtifactKind as ArtifactFactKind, ConversationFacts,
-    PanelChatMode, ProjectConversationRow, ProjectFacts, ProjectTreeNode, filter_artifacts,
+    ConversationFacts, PanelChatMode, ProjectConversationRow, ProjectFacts, ProjectTreeNode,
     project_tree,
 };
 use crate::theme::{
@@ -37,7 +38,9 @@ pub(crate) struct SidePanel {
     name: &'static str,
     title: SharedString,
     kind: SidePanelKind,
-    artifact_filter: ArtifactFilter,
+    artifact_type_filter: ArtifactTypeFilter,
+    artifact_conversation_filter: Option<usize>,
+    artifact_time_filter: ArtifactTimeFilter,
     collapsed_project_ids: HashSet<usize>,
 }
 
@@ -49,9 +52,15 @@ enum SidePanelKind {
 #[derive(Clone)]
 struct ArtifactItem {
     conversation_id: usize,
+    message_ix: usize,
+    target: ArtifactHighlightTarget,
+    order: usize,
     title: SharedString,
     detail: SharedString,
     conversation: SharedString,
+    file_type: ArtifactFileType,
+    source: ArtifactSource,
+    created_at_ms: Option<u64>,
     kind: ArtifactPayload,
 }
 
@@ -59,6 +68,145 @@ struct ArtifactItem {
 enum ArtifactPayload {
     Image(ImageAttachment),
     File,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactFileType {
+    Image,
+    Document,
+    File,
+}
+
+impl ArtifactFileType {
+    fn label(self) -> &'static str {
+        match self {
+            ArtifactFileType::Image => "Image",
+            ArtifactFileType::Document => "Document",
+            ArtifactFileType::File => "File",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactSource {
+    Uploaded,
+    Generated,
+}
+
+impl ArtifactSource {
+    fn label(self) -> &'static str {
+        match self {
+            ArtifactSource::Uploaded => "Uploaded",
+            ArtifactSource::Generated => "Generated",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactTypeFilter {
+    All,
+    Images,
+    Documents,
+    Files,
+}
+
+impl ArtifactTypeFilter {
+    const ALL: [ArtifactTypeFilter; 4] = [
+        ArtifactTypeFilter::All,
+        ArtifactTypeFilter::Images,
+        ArtifactTypeFilter::Documents,
+        ArtifactTypeFilter::Files,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            ArtifactTypeFilter::All => "All",
+            ArtifactTypeFilter::Images => "Images",
+            ArtifactTypeFilter::Documents => "Documents",
+            ArtifactTypeFilter::Files => "Files",
+        }
+    }
+
+    fn short_label(self) -> &'static str {
+        match self {
+            ArtifactTypeFilter::All => "All",
+            ArtifactTypeFilter::Images => "Images",
+            ArtifactTypeFilter::Documents => "Docs",
+            ArtifactTypeFilter::Files => "Files",
+        }
+    }
+
+    fn matches(self, file_type: ArtifactFileType) -> bool {
+        match self {
+            ArtifactTypeFilter::All => true,
+            ArtifactTypeFilter::Images => file_type == ArtifactFileType::Image,
+            ArtifactTypeFilter::Documents => file_type == ArtifactFileType::Document,
+            ArtifactTypeFilter::Files => file_type == ArtifactFileType::File,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactTimeFilter {
+    All,
+    Last24Hours,
+    Last7Days,
+    Older,
+    Unknown,
+}
+
+impl ArtifactTimeFilter {
+    const ALL: [ArtifactTimeFilter; 5] = [
+        ArtifactTimeFilter::All,
+        ArtifactTimeFilter::Last24Hours,
+        ArtifactTimeFilter::Last7Days,
+        ArtifactTimeFilter::Older,
+        ArtifactTimeFilter::Unknown,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            ArtifactTimeFilter::All => "All time",
+            ArtifactTimeFilter::Last24Hours => "24h",
+            ArtifactTimeFilter::Last7Days => "7d",
+            ArtifactTimeFilter::Older => "Older",
+            ArtifactTimeFilter::Unknown => "Unknown",
+        }
+    }
+
+    fn short_label(self) -> &'static str {
+        match self {
+            ArtifactTimeFilter::All => "All",
+            ArtifactTimeFilter::Last24Hours => "24h",
+            ArtifactTimeFilter::Last7Days => "7d",
+            ArtifactTimeFilter::Older => "Older",
+            ArtifactTimeFilter::Unknown => "No date",
+        }
+    }
+
+    fn matches(self, created_at_ms: Option<u64>, now_ms: u64) -> bool {
+        const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+        match self {
+            ArtifactTimeFilter::All => true,
+            ArtifactTimeFilter::Last24Hours => {
+                created_at_ms.is_some_and(|created| created >= now_ms.saturating_sub(DAY_MS))
+            }
+            ArtifactTimeFilter::Last7Days => {
+                created_at_ms.is_some_and(|created| created >= now_ms.saturating_sub(7 * DAY_MS))
+            }
+            ArtifactTimeFilter::Older => {
+                created_at_ms.is_some_and(|created| created < now_ms.saturating_sub(7 * DAY_MS))
+            }
+            ArtifactTimeFilter::Unknown => created_at_ms.is_none(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ArtifactConversationOption {
+    id: usize,
+    title: SharedString,
+    count: usize,
 }
 
 fn conversation_title(conversation: &Conversation) -> SharedString {
@@ -119,7 +267,9 @@ impl SidePanel {
             name: PROJECTS_PANEL_NAME,
             title: "Projects".into(),
             kind: SidePanelKind::Projects { app },
-            artifact_filter: ArtifactFilter::All,
+            artifact_type_filter: ArtifactTypeFilter::All,
+            artifact_conversation_filter: None,
+            artifact_time_filter: ArtifactTimeFilter::All,
             collapsed_project_ids: HashSet::new(),
         }
     }
@@ -134,7 +284,9 @@ impl SidePanel {
             name: ARTIFACTS_PANEL_NAME,
             title: "Artifacts".into(),
             kind: SidePanelKind::Artifacts { app },
-            artifact_filter: ArtifactFilter::All,
+            artifact_type_filter: ArtifactTypeFilter::All,
+            artifact_conversation_filter: None,
+            artifact_time_filter: ArtifactTimeFilter::All,
             collapsed_project_ids: HashSet::new(),
         }
     }
@@ -200,8 +352,16 @@ impl SidePanel {
             .upgrade()
             .map(|app| Self::collect_artifacts(&app.read(cx).conversations))
             .unwrap_or_default();
-        let artifacts = Self::filter_artifacts(&all_artifacts, self.artifact_filter);
+        let now_ms = current_time_ms();
+        let artifacts = Self::filter_artifacts(
+            &all_artifacts,
+            self.artifact_type_filter,
+            self.artifact_conversation_filter,
+            self.artifact_time_filter,
+            now_ms,
+        );
         let count = artifacts.len();
+        let total_count = all_artifacts.len();
 
         v_flex()
             .flex_1()
@@ -213,14 +373,15 @@ impl SidePanel {
                     .pb_2()
                     .items_center()
                     .justify_between()
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(text_3())
-                            .child(format!("{count} item{}", if count == 1 { "" } else { "s" })),
-                    ),
+                    .child(div().text_size(px(12.)).text_color(text_3()).child(
+                        if count == total_count {
+                            format!("{count} item{}", if count == 1 { "" } else { "s" })
+                        } else {
+                            format!("{count} of {total_count} items")
+                        },
+                    )),
             )
-            .child(self.render_artifact_filter(cx))
+            .child(self.render_artifact_filters(&all_artifacts, cx))
             .child(
                 div()
                     .flex_1()
@@ -230,11 +391,11 @@ impl SidePanel {
                     .pb_3()
                     .map(|this| {
                         if artifacts.is_empty() {
-                            this.child(Self::render_empty_artifacts())
+                            this.child(Self::render_empty_artifacts(total_count > 0))
                         } else {
                             this.child(v_flex().gap_2().children(
                                 artifacts.into_iter().enumerate().map(|(ix, artifact)| {
-                                    Self::render_artifact_item(ix, artifact, weak.clone())
+                                    Self::render_artifact_item(ix, artifact, weak.clone(), now_ms)
                                 }),
                             ))
                         }
@@ -484,56 +645,125 @@ impl SidePanel {
             })
     }
 
-    fn filter_artifacts(items: &[ArtifactItem], filter: ArtifactFilter) -> Vec<ArtifactItem> {
-        let facts = items
-            .iter()
-            .map(|item| ArtifactFacts {
-                conversation_id: item.conversation_id,
-                kind: match &item.kind {
-                    ArtifactPayload::Image(_) => ArtifactFactKind::Image,
-                    ArtifactPayload::File => ArtifactFactKind::File,
-                },
-            })
-            .collect::<Vec<_>>();
-        let visible_ids = filter_artifacts(&facts, filter)
-            .into_iter()
-            .map(|fact| (fact.conversation_id, fact.kind))
-            .collect::<Vec<_>>();
-
+    fn filter_artifacts(
+        items: &[ArtifactItem],
+        type_filter: ArtifactTypeFilter,
+        conversation_filter: Option<usize>,
+        time_filter: ArtifactTimeFilter,
+        now_ms: u64,
+    ) -> Vec<ArtifactItem> {
         items
             .iter()
+            .filter(|item| type_filter.matches(item.file_type))
             .filter(|item| {
-                let kind = match &item.kind {
-                    ArtifactPayload::Image(_) => ArtifactFactKind::Image,
-                    ArtifactPayload::File => ArtifactFactKind::File,
-                };
-                visible_ids.contains(&(item.conversation_id, kind))
+                conversation_filter
+                    .map(|conversation_id| item.conversation_id == conversation_id)
+                    .unwrap_or(true)
             })
+            .filter(|item| time_filter.matches(item.created_at_ms, now_ms))
             .cloned()
             .collect()
     }
 
+    fn extension_label(name: &str) -> Option<String> {
+        name.rsplit_once('.').and_then(|(_, extension)| {
+            let extension = extension.trim();
+            (!extension.is_empty() && extension.len() <= 8).then(|| extension.to_ascii_uppercase())
+        })
+    }
+
+    fn file_type_from_name(name: &str) -> ArtifactFileType {
+        let extension = Self::extension_label(name).map(|extension| extension.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg") => {
+                ArtifactFileType::Image
+            }
+            Some("pdf" | "doc" | "docx" | "txt" | "md" | "rtf") => ArtifactFileType::Document,
+            _ => ArtifactFileType::File,
+        }
+    }
+
+    fn artifact_detail(
+        file_type: ArtifactFileType,
+        name: &str,
+        detail: Option<&str>,
+    ) -> SharedString {
+        let mut parts = vec![file_type.label().to_string()];
+        let detail = detail.map(str::trim).filter(|detail| !detail.is_empty());
+        if let Some(extension) = Self::extension_label(name)
+            && !detail
+                .is_some_and(|detail| detail.to_ascii_uppercase().starts_with(extension.as_str()))
+        {
+            parts.push(extension);
+        }
+        if let Some(detail) = detail {
+            parts.push(detail.to_string());
+        }
+        parts.join(" · ").into()
+    }
+
+    fn generated_file_detail(
+        file_type: ArtifactFileType,
+        name: &str,
+        tool_title: &str,
+        step_title: &str,
+    ) -> SharedString {
+        let mut parts = vec![file_type.label().to_string()];
+        if let Some(extension) = Self::extension_label(name) {
+            parts.push(extension);
+        }
+        if !tool_title.trim().is_empty() {
+            parts.push(tool_title.to_string());
+        }
+        if !step_title.trim().is_empty() {
+            parts.push(step_title.to_string());
+        }
+        parts.join(" · ").into()
+    }
+
     fn collect_artifacts(conversations: &[Conversation]) -> Vec<ArtifactItem> {
         let mut items = Vec::new();
+        let mut order = 0;
         for conversation in conversations {
             let conversation_title = conversation_title(conversation);
 
-            for message in &conversation.messages {
-                for attachment in &message.attachments {
-                    if attachment.is_document() {
-                        continue;
-                    }
+            for (message_ix, message) in conversation.messages.iter().enumerate() {
+                for (attachment_ix, attachment) in message.attachments.iter().enumerate() {
+                    let file_type = if attachment.is_document() {
+                        ArtifactFileType::Document
+                    } else {
+                        ArtifactFileType::Image
+                    };
+                    let kind = if file_type == ArtifactFileType::Image {
+                        ArtifactPayload::Image(attachment.clone())
+                    } else {
+                        ArtifactPayload::File
+                    };
                     items.push(ArtifactItem {
                         conversation_id: conversation.id,
+                        message_ix,
+                        target: ArtifactHighlightTarget {
+                            message_ix,
+                            kind: ArtifactHighlightKind::Attachment { attachment_ix },
+                        },
+                        order,
                         title: attachment.title.clone(),
-                        detail: format!("Uploaded image · {}", attachment.detail).into(),
+                        detail: Self::artifact_detail(
+                            file_type,
+                            attachment.title.as_ref(),
+                            Some(attachment.detail.as_ref()),
+                        ),
                         conversation: conversation_title.clone(),
-                        kind: ArtifactPayload::Image(attachment.clone()),
+                        file_type,
+                        source: ArtifactSource::Uploaded,
+                        created_at_ms: message.created_at_ms,
+                        kind,
                     });
+                    order += 1;
                 }
 
                 if let Some(blocks) = &message.blocks {
-                    for block in blocks {
+                    for (block_ix, block) in blocks.iter().enumerate() {
                         match block {
                             MessageBlock::GeneratedImage(image) => {
                                 let attachment = ImageAttachment {
@@ -546,23 +776,56 @@ impl SidePanel {
                                 };
                                 items.push(ArtifactItem {
                                     conversation_id: conversation.id,
+                                    message_ix,
+                                    target: ArtifactHighlightTarget {
+                                        message_ix,
+                                        kind: ArtifactHighlightKind::GeneratedImage { block_ix },
+                                    },
+                                    order,
                                     title: image.title.clone(),
-                                    detail: format!("Generated image · {}", image.size).into(),
+                                    detail: Self::artifact_detail(
+                                        ArtifactFileType::Image,
+                                        image.title.as_ref(),
+                                        Some(image.size.as_ref()),
+                                    ),
                                     conversation: conversation_title.clone(),
+                                    file_type: ArtifactFileType::Image,
+                                    source: ArtifactSource::Generated,
+                                    created_at_ms: message.created_at_ms,
                                     kind: ArtifactPayload::Image(attachment),
                                 });
+                                order += 1;
                             }
                             MessageBlock::Tool(tool) => {
-                                for step in &tool.steps {
+                                for (step_ix, step) in tool.steps.iter().enumerate() {
                                     if let Some(file_chip) = &step.file_chip {
+                                        let file_type =
+                                            Self::file_type_from_name(file_chip.as_ref());
                                         items.push(ArtifactItem {
                                             conversation_id: conversation.id,
+                                            message_ix,
+                                            target: ArtifactHighlightTarget {
+                                                message_ix,
+                                                kind: ArtifactHighlightKind::ToolFile {
+                                                    tool_ix: block_ix,
+                                                    step_ix,
+                                                },
+                                            },
+                                            order,
                                             title: file_chip.clone(),
-                                            detail: format!("{} · {}", tool.title, step.title)
-                                                .into(),
+                                            detail: Self::generated_file_detail(
+                                                file_type,
+                                                file_chip.as_ref(),
+                                                tool.title.as_ref(),
+                                                step.title.as_ref(),
+                                            ),
                                             conversation: conversation_title.clone(),
+                                            file_type,
+                                            source: ArtifactSource::Generated,
+                                            created_at_ms: message.created_at_ms,
                                             kind: ArtifactPayload::File,
                                         });
+                                        order += 1;
                                     }
                                 }
                             }
@@ -572,6 +835,11 @@ impl SidePanel {
                 }
             }
         }
+        items.sort_by(|a, b| {
+            b.created_at_ms
+                .cmp(&a.created_at_ms)
+                .then_with(|| b.order.cmp(&a.order))
+        });
         items
     }
 
@@ -763,25 +1031,265 @@ impl SidePanel {
             )
     }
 
-    fn render_artifact_filter(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
+    fn artifact_conversation_options(
+        artifacts: &[ArtifactItem],
+    ) -> Vec<ArtifactConversationOption> {
+        let mut options = Vec::<ArtifactConversationOption>::new();
+        for artifact in artifacts {
+            if let Some(option) = options
+                .iter_mut()
+                .find(|option| option.id == artifact.conversation_id)
+            {
+                option.count += 1;
+            } else {
+                options.push(ArtifactConversationOption {
+                    id: artifact.conversation_id,
+                    title: artifact.conversation.clone(),
+                    count: 1,
+                });
+            }
+        }
+        options
+    }
+
+    fn selected_conversation_filter_label(&self, artifacts: &[ArtifactItem]) -> SharedString {
+        let Some(selected_id) = self.artifact_conversation_filter else {
+            return "All conversations".into();
+        };
+
+        Self::artifact_conversation_options(artifacts)
+            .into_iter()
+            .find(|option| option.id == selected_id)
+            .map(|option| option.title)
+            .unwrap_or_else(|| "Conversation".into())
+    }
+
+    fn render_artifact_filters(
+        &self,
+        artifacts: &[ArtifactItem],
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let conversation_label = self.selected_conversation_filter_label(artifacts);
+        let conversation_options = Self::artifact_conversation_options(artifacts);
+        let selected_conversation = self.artifact_conversation_filter;
+        let panel = cx.entity().downgrade();
+
+        v_flex()
             .px_3()
             .pb_2()
-            .gap_1()
-            .children(ArtifactFilter::ALL.into_iter().map(|filter| {
-                Button::new(format!("artifact-filter-{}", filter.label()))
-                    .ghost()
-                    .small()
-                    .selected(self.artifact_filter == filter)
-                    .label(filter.label())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.artifact_filter = filter;
-                        cx.notify();
-                    }))
+            .gap_1p5()
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_0p5()
+                    .rounded_lg()
+                    .bg(file_chip_bg())
+                    .p_0p5()
+                    .children(
+                        ArtifactTypeFilter::ALL
+                            .into_iter()
+                            .map(|filter| self.render_artifact_type_filter_chip(filter, cx)),
+                    ),
+            )
+            .child(
+                Popover::new("artifact-conversation-filter")
+                    .anchor(Anchor::BottomLeft)
+                    .p_0()
+                    .trigger(
+                        Button::new("artifact-conversation-filter-button")
+                            .w_full()
+                            .outline()
+                            .small()
+                            .compact()
+                            .icon(IconName::Inbox)
+                            .label(conversation_label)
+                            .tooltip("Source conversation"),
+                    )
+                    .content(move |_, _, _| {
+                        Self::artifact_conversation_filter_menu(
+                            conversation_options.clone(),
+                            selected_conversation,
+                            panel.clone(),
+                        )
+                        .into_any_element()
+                    }),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_0p5()
+                    .rounded_lg()
+                    .bg(file_chip_bg())
+                    .p_0p5()
+                    .children(
+                        ArtifactTimeFilter::ALL
+                            .into_iter()
+                            .map(|filter| self.render_artifact_time_filter_chip(filter, cx)),
+                    ),
+            )
+    }
+
+    fn render_artifact_type_filter_chip(
+        &self,
+        filter: ArtifactTypeFilter,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let selected = self.artifact_type_filter == filter;
+        h_flex()
+            .id(format!("artifact-type-filter-{}", filter.label()))
+            .h(px(24.))
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .border_1()
+            .border_color(if selected {
+                border_color()
+            } else {
+                file_chip_bg()
+            })
+            .cursor_pointer()
+            .text_size(px(11.5))
+            .text_color(if selected { text_color() } else { text_2() })
+            .when(selected, |this| {
+                this.bg(white_color()).font_weight(FontWeight::SEMIBOLD)
+            })
+            .hover(|this| this.bg(white_color()).text_color(text_color()))
+            .child(div().truncate().child(filter.short_label()))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.artifact_type_filter = filter;
+                cx.notify();
             }))
     }
 
-    fn render_empty_artifacts() -> impl IntoElement {
+    fn render_artifact_time_filter_chip(
+        &self,
+        filter: ArtifactTimeFilter,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let selected = self.artifact_time_filter == filter;
+        h_flex()
+            .id(format!("artifact-time-filter-{}", filter.label()))
+            .h(px(24.))
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .border_1()
+            .border_color(if selected {
+                border_color()
+            } else {
+                file_chip_bg()
+            })
+            .cursor_pointer()
+            .text_size(px(11.))
+            .text_color(if selected { text_color() } else { text_2() })
+            .when(selected, |this| {
+                this.bg(white_color()).font_weight(FontWeight::SEMIBOLD)
+            })
+            .hover(|this| this.bg(white_color()).text_color(text_color()))
+            .child(div().truncate().child(filter.short_label()))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.artifact_time_filter = filter;
+                cx.notify();
+            }))
+    }
+
+    fn artifact_conversation_filter_menu(
+        options: Vec<ArtifactConversationOption>,
+        selected: Option<usize>,
+        panel: WeakEntity<SidePanel>,
+    ) -> impl IntoElement {
+        let all_panel = panel.clone();
+        let mut content = v_flex()
+            .id("artifact-conversation-filter-menu")
+            .w(px(260.))
+            .max_h(px(340.))
+            .overflow_y_scrollbar()
+            .py_1()
+            .child(Self::artifact_conversation_filter_row(
+                "artifact-conversation-all",
+                IconName::Inbox,
+                "All conversations".into(),
+                None,
+                selected.is_none(),
+                all_panel,
+            ));
+
+        for option in options {
+            let label = format!("{} ({})", option.title, option.count);
+            content = content.child(Self::artifact_conversation_filter_row(
+                ("artifact-conversation", option.id),
+                if selected == Some(option.id) {
+                    IconName::Check
+                } else {
+                    IconName::Inbox
+                },
+                label.into(),
+                Some(option.id),
+                selected == Some(option.id),
+                panel.clone(),
+            ));
+        }
+
+        content
+    }
+
+    fn artifact_conversation_filter_row(
+        id: impl Into<ElementId>,
+        icon: IconName,
+        label: SharedString,
+        value: Option<usize>,
+        selected: bool,
+        panel: WeakEntity<SidePanel>,
+    ) -> Stateful<Div> {
+        h_flex()
+            .id(id)
+            .px_3p5()
+            .py_2p5()
+            .gap_2p5()
+            .items_center()
+            .cursor_pointer()
+            .text_size(px(13.))
+            .text_color(text_color())
+            .hover(|this| this.bg(hover_bg()))
+            .when(selected, |this| this.bg(file_chip_bg()))
+            .child(Icon::new(icon).size_3p5().text_color(text_2()))
+            .child(div().flex_1().min_w_0().truncate().child(label))
+            .on_click(move |_, _, cx| {
+                if let Some(panel) = panel.upgrade() {
+                    panel.update(cx, |panel, cx| {
+                        panel.artifact_conversation_filter = value;
+                        cx.notify();
+                    });
+                }
+            })
+    }
+
+    fn artifact_time_label(created_at_ms: Option<u64>, now_ms: u64) -> String {
+        const MINUTE_MS: u64 = 60 * 1000;
+        const HOUR_MS: u64 = 60 * MINUTE_MS;
+        const DAY_MS: u64 = 24 * HOUR_MS;
+
+        let Some(created_at_ms) = created_at_ms else {
+            return "Unknown time".to_string();
+        };
+
+        let elapsed = now_ms.saturating_sub(created_at_ms);
+        if elapsed < MINUTE_MS {
+            "Just now".to_string()
+        } else if elapsed < HOUR_MS {
+            format!("{}m ago", elapsed / MINUTE_MS)
+        } else if elapsed < DAY_MS {
+            format!("{}h ago", elapsed / HOUR_MS)
+        } else {
+            format!("{}d ago", elapsed / DAY_MS)
+        }
+    }
+
+    fn render_empty_artifacts(filtered: bool) -> impl IntoElement {
         v_flex()
             .items_center()
             .justify_center()
@@ -805,7 +1313,11 @@ impl SidePanel {
                     .text_size(px(13.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(text_color())
-                    .child("No artifacts yet"),
+                    .child(if filtered {
+                        "No matching artifacts"
+                    } else {
+                        "No artifacts yet"
+                    }),
             )
             .child(
                 div()
@@ -813,7 +1325,11 @@ impl SidePanel {
                     .text_size(px(12.))
                     .line_height(relative(1.45))
                     .text_color(text_3())
-                    .child("Images and files from all conversations appear here."),
+                    .child(if filtered {
+                        "Adjust the filters to see more items."
+                    } else {
+                        "Images, documents, and generated files appear here."
+                    }),
             )
     }
 
@@ -821,12 +1337,20 @@ impl SidePanel {
         ix: usize,
         artifact: ArtifactItem,
         app: WeakEntity<ClaudeApp>,
+        now_ms: u64,
     ) -> impl IntoElement {
         let conversation_id = artifact.conversation_id;
+        let message_ix = artifact.message_ix;
+        let target = artifact.target;
         let title = artifact.title.clone();
         let title_for_copy = artifact.title.clone();
         let detail = artifact.detail.clone();
-        let conversation = artifact.conversation.clone();
+        let meta = format!(
+            "{} · {} · Msg {}",
+            artifact.source.label(),
+            Self::artifact_time_label(artifact.created_at_ms, now_ms),
+            message_ix + 1
+        );
         let preview = match artifact.kind.clone() {
             ArtifactPayload::Image(image) => Some(image),
             ArtifactPayload::File => None,
@@ -835,7 +1359,7 @@ impl SidePanel {
 
         h_flex()
             .id(("artifact-item", ix))
-            .gap_2p5()
+            .gap_2()
             .items_center()
             .p_2()
             .rounded_lg()
@@ -851,7 +1375,7 @@ impl SidePanel {
                     .gap_0p5()
                     .child(
                         div()
-                            .text_size(px(12.5))
+                            .text_size(px(12.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(text_color())
                             .truncate()
@@ -859,7 +1383,7 @@ impl SidePanel {
                     )
                     .child(
                         div()
-                            .text_size(px(11.5))
+                            .text_size(px(11.))
                             .text_color(text_2())
                             .truncate()
                             .child(detail),
@@ -869,7 +1393,7 @@ impl SidePanel {
                             .text_size(px(11.))
                             .text_color(text_3())
                             .truncate()
-                            .child(conversation),
+                            .child(meta),
                     ),
             )
             .child(
@@ -898,12 +1422,17 @@ impl SidePanel {
                             .ghost()
                             .xsmall()
                             .icon(IconName::ExternalLink)
-                            .tooltip("Open source conversation")
+                            .tooltip("Open source message")
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 if let Some(app) = open_app.upgrade() {
                                     app.update(cx, |app, cx| {
-                                        app.select_conversation(conversation_id, window, cx)
+                                        app.select_conversation_artifact(
+                                            conversation_id,
+                                            target,
+                                            window,
+                                            cx,
+                                        )
                                     });
                                 }
                             }),
@@ -925,7 +1454,7 @@ impl SidePanel {
             .on_click(move |_, window, cx| {
                 if let Some(app) = app.upgrade() {
                     app.update(cx, |app, cx| {
-                        app.select_conversation(conversation_id, window, cx)
+                        app.select_conversation_artifact(conversation_id, target, window, cx)
                     });
                 }
             })
@@ -937,8 +1466,8 @@ impl SidePanel {
                 let preview = image.clone();
                 div()
                     .id(("artifact-image", ix))
-                    .size(px(56.))
-                    .rounded_lg()
+                    .size(px(48.))
+                    .rounded_md()
                     .overflow_hidden()
                     .border_1()
                     .border_color(border_color())
@@ -954,8 +1483,8 @@ impl SidePanel {
             }
             ArtifactPayload::File => div()
                 .id(("artifact-file", ix))
-                .size(px(56.))
-                .rounded_lg()
+                .size(px(48.))
+                .rounded_md()
                 .border_1()
                 .border_color(border_color())
                 .bg(file_chip_bg())
@@ -964,7 +1493,7 @@ impl SidePanel {
                 .justify_center()
                 .flex_shrink_0()
                 .text_color(text_2())
-                .child(Icon::new(IconName::File).size_5())
+                .child(Icon::new(IconName::File).size_4())
                 .into_any_element(),
         }
     }

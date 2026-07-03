@@ -44,13 +44,14 @@ mod system_file;
 mod theme;
 mod titlebar;
 use app_updater::{UpdateStatus, Updater};
+use chat_view::ArtifactHighlightTarget;
 use conversation_panel::ConversationPanel;
 use dialogs::static_row;
 use genai_backend::ChatRoute;
 use models::{
     AppSettings, BranchOrigin, ChatMessage, ChatMode, ChatRole, Conversation,
     ConversationPanelLayout, CurrentModel, PersistedAppSettings, PersistedState, Project, Provider,
-    ProviderKind, ProviderModel,
+    ProviderKind, ProviderModel, current_time_ms,
 };
 use search_dialog::SearchDialog;
 use settings_window::SettingsWindow;
@@ -366,6 +367,7 @@ impl ClaudeApp {
             thinking: SharedString::default(),
             model: "Sonnet 4.6".into(),
             mode,
+            created_at_ms: Some(current_time_ms()),
             attachments: Vec::new(),
             blocks: None,
         }
@@ -678,6 +680,21 @@ impl ClaudeApp {
         cx: &mut Context<Self>,
     ) {
         self.open_conversation_panel(id, window, cx);
+    }
+
+    pub(crate) fn select_conversation_artifact(
+        &mut self,
+        id: usize,
+        target: ArtifactHighlightTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_conversation_panel(id, window, cx);
+        if let Some(panel) = self.conversation_panels.get(&id) {
+            panel.update(cx, |panel, cx| {
+                panel.reveal_artifact(target, window, cx);
+            });
+        }
     }
 
     pub(crate) fn set_conversation_pinned(
