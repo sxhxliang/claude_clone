@@ -19,7 +19,7 @@ use gpui_component::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::models::BranchOrigin;
+use crate::models::{BranchOrigin, TokenUsageStats};
 use crate::theme::{
     accent, border_color, file_chip_bg, file_chip_hover_bg, hover_bg, text_2, text_3, text_color,
     timeline_line, user_bubble_bg, white_color,
@@ -408,20 +408,33 @@ fn render_ai_message<T: ChatViewState>(
 ) -> impl IntoElement {
     let mode = msg.mode;
     let model = msg.model.clone();
+    let token_stats = (mode == ChatMode::Chat)
+        .then_some(msg.token_stats)
+        .flatten();
     let header = h_flex()
         .gap_2()
         .items_center()
         .mb_2()
         .child(div().text_color(accent()).text_size(px(17.)).child("✳"))
         .child(
-            div()
-                .text_size(px(12.))
-                .text_color(text_3())
-                .child(crate::tr!(
-                    "chat_view.message_header",
-                    mode = crate::i18n::chat_mode_label(mode).to_string(),
-                    model = model.to_string()
-                )),
+            h_flex()
+                .gap_1p5()
+                .items_center()
+                .min_w_0()
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(text_3())
+                        .truncate()
+                        .child(crate::tr!(
+                            "chat_view.message_header",
+                            mode = crate::i18n::chat_mode_label(mode).to_string(),
+                            model = model.to_string()
+                        )),
+                )
+                .when_some(token_stats, |this, stats| {
+                    this.child(metadata_chip(token_speed_label(stats), text_3()))
+                }),
         );
 
     let body = if let Some(blocks) = &msg.blocks {
@@ -456,6 +469,19 @@ fn render_ai_message<T: ChatViewState>(
                 .child(body)
                 .child(render_ai_actions(ix, group_id, cx)),
         )
+}
+
+fn token_speed_label(stats: TokenUsageStats) -> SharedString {
+    let speed = if stats.tokens_per_second >= 100.0 {
+        format!("{:.0}", stats.tokens_per_second)
+    } else {
+        format!("{:.1}", stats.tokens_per_second)
+    };
+    crate::tr!(
+        "chat_view.token_speed",
+        tokens = stats.output_tokens,
+        speed = speed
+    )
 }
 
 fn render_ai_actions<T: ChatViewState>(

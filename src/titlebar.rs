@@ -129,6 +129,8 @@ impl Render for TopBar {
                     h_flex()
                         .gap_2()
                         .items_center()
+                        .child(div().text_size(px(17.)).text_color(accent()).child("✳"))
+                        .child(div().text_size(px(13.5)).child("Claude"))
                         .child(
                             div()
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -148,8 +150,24 @@ impl Render for TopBar {
                                         })),
                                 ),
                         )
-                        .child(div().text_size(px(17.)).text_color(accent()).child("✳"))
-                        .child(div().text_size(px(13.5)).child("Claude"))
+                        .child(
+                            div()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .child(
+                                    Button::new("search-top")
+                                        .ghost()
+                                        .small()
+                                        .icon(IconName::Search)
+                                        .tooltip(crate::tr!("nav.search"))
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            if let Some(app) = this.app.upgrade() {
+                                                app.update(cx, |app, cx| {
+                                                    app.open_search(window, cx)
+                                                });
+                                            }
+                                        })),
+                                ),
+                        )
                         .when(in_chat, |this| {
                             this.child(
                                 div()

@@ -314,22 +314,6 @@ impl Sidebar {
                 cx,
             ))
             .child(Self::nav_item(
-                "nav-search",
-                IconName::Search,
-                crate::tr!("nav.search"),
-                NavItemStyle {
-                    badge: None,
-                    muted: false,
-                    selected: false,
-                },
-                |this, _, window, cx| {
-                    if let Some(app) = this.app.upgrade() {
-                        app.update(cx, |app, cx| app.open_search(window, cx));
-                    }
-                },
-                cx,
-            ))
-            .child(Self::nav_item(
                 "nav-chats",
                 IconName::Inbox,
                 crate::tr!("nav.chats"),

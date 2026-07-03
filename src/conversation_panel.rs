@@ -20,6 +20,7 @@ use gpui_component::{
 };
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
+use std::time::Instant;
 
 use crate::chat_view::{
     self, ArtifactHighlightTarget, ChatViewState, GeneratedImage, ImageAttachment, MessageBlock,
@@ -33,7 +34,7 @@ use crate::menus::{add_menu_content, mcp_menu_content, model_menu_content};
 use crate::mock_backend;
 use crate::models::{
     BranchOrigin, ChatMessage, ChatMode, ChatRole, Conversation, ConversationPanelLayout,
-    current_time_ms,
+    TokenUsageStats, current_time_ms,
 };
 use crate::theme::{
     accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
@@ -42,6 +43,74 @@ use crate::theme::{
 use crate::{ClaudeApp, ConversationTabCloseScope};
 
 pub(crate) const PANEL_NAME: &str = "ClaudeConversationPanel";
+
+#[derive(Default)]
+struct StreamingTokenCounter {
+    started_at: Option<Instant>,
+    output: String,
+    provider_output_tokens: Option<usize>,
+}
+
+impl StreamingTokenCounter {
+    fn record_delta(&mut self, delta: &str) -> Option<TokenUsageStats> {
+        if delta.is_empty() {
+            return self.stats();
+        }
+
+        self.started_at.get_or_insert_with(Instant::now);
+        self.output.push_str(delta);
+        self.stats()
+    }
+
+    fn record_usage(&mut self, output_tokens: usize) -> Option<TokenUsageStats> {
+        self.provider_output_tokens = Some(output_tokens);
+        self.stats()
+    }
+
+    fn stats(&self) -> Option<TokenUsageStats> {
+        let started_at = self.started_at?;
+        let output_tokens = self
+            .provider_output_tokens
+            .unwrap_or_else(|| estimate_output_tokens(&self.output));
+        if output_tokens == 0 {
+            return None;
+        }
+
+        let elapsed_secs = started_at.elapsed().as_secs_f64().max(0.1);
+        Some(TokenUsageStats {
+            output_tokens,
+            tokens_per_second: output_tokens as f64 / elapsed_secs,
+        })
+    }
+}
+
+fn estimate_output_tokens(text: &str) -> usize {
+    fn flush_ascii_run(output_tokens: &mut usize, ascii_chars: &mut usize) {
+        if *ascii_chars > 0 {
+            *output_tokens += ascii_chars.div_ceil(4).max(1);
+            *ascii_chars = 0;
+        }
+    }
+
+    let mut output_tokens = 0;
+    let mut ascii_chars = 0;
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch.is_ascii_whitespace() {
+            ascii_chars += 1;
+        } else if ch.is_ascii_punctuation() {
+            flush_ascii_run(&mut output_tokens, &mut ascii_chars);
+            output_tokens += 1;
+        } else if ch.is_whitespace() {
+            flush_ascii_run(&mut output_tokens, &mut ascii_chars);
+        } else {
+            flush_ascii_run(&mut output_tokens, &mut ascii_chars);
+            output_tokens += 1;
+        }
+    }
+    flush_ascii_run(&mut output_tokens, &mut ascii_chars);
+
+    output_tokens
+}
 
 pub(crate) struct ConversationPanel {
     focus_handle: FocusHandle,
@@ -80,7 +149,7 @@ impl ConversationPanel {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .auto_grow(1, 6)
-                .placeholder(crate::tr!("chat.reply_placeholder"))
+                .placeholder(crate::tr!("chat.home_placeholder"))
         });
         let subscriptions = vec![
             cx.subscribe_in(&input, window, {
@@ -356,6 +425,7 @@ impl ConversationPanel {
             model,
             mode,
             created_at_ms: Some(current_time_ms()),
+            token_stats: None,
             attachments: Vec::new(),
             blocks: None,
         });
@@ -398,6 +468,7 @@ impl ConversationPanel {
             model,
             mode,
             created_at_ms: Some(current_time_ms()),
+            token_stats: None,
             attachments: Vec::new(),
             blocks: Some(blocks),
         });
@@ -415,6 +486,7 @@ impl ConversationPanel {
             model,
             mode,
             created_at_ms: Some(current_time_ms()),
+            token_stats: None,
             attachments: Vec::new(),
             blocks: Some(Vec::new()),
         });
@@ -436,6 +508,26 @@ impl ConversationPanel {
     fn current_streaming_ai_message_mut(&mut self) -> Option<&mut ChatMessage> {
         let message = self.messages.last_mut()?;
         (message.role == ChatRole::Ai).then_some(message)
+    }
+
+    fn update_streaming_token_stats(&mut self, stats: Option<TokenUsageStats>) {
+        let Some(stats) = stats else {
+            return;
+        };
+        if stats.output_tokens == 0 || !stats.tokens_per_second.is_finite() {
+            return;
+        }
+        if let Some(message) = self.current_streaming_ai_message_mut()
+            && message.mode == ChatMode::Chat
+        {
+            message.token_stats = Some(stats);
+        }
+    }
+
+    fn clear_streaming_token_stats(&mut self) {
+        if let Some(message) = self.current_streaming_ai_message_mut() {
+            message.token_stats = None;
+        }
     }
 
     fn chat_is_at_bottom(&self) -> bool {
@@ -787,10 +879,14 @@ impl ConversationPanel {
                     message.model = model.clone();
                     message.mode = mode;
                     message.created_at_ms = Some(current_time_ms());
+                    message.token_stats = None;
                     message.attachments = attachments;
                     message.blocks = None;
                 }
-                self.input.update(cx, |s, cx| s.set_value("", window, cx));
+                self.input.update(cx, |s, cx| {
+                    s.set_value("", window, cx);
+                    s.set_placeholder(crate::tr!("chat.reply_placeholder"), window, cx);
+                });
                 self.pending = true;
                 self.sync_to_app(cx);
                 cx.notify();
@@ -807,11 +903,15 @@ impl ConversationPanel {
             model: model.clone(),
             mode,
             created_at_ms: Some(current_time_ms()),
+            token_stats: None,
             attachments: attachments.clone(),
             blocks: None,
         });
         self.cowork_user_expanded.push(false);
-        self.input.update(cx, |s, cx| s.set_value("", window, cx));
+        self.input.update(cx, |s, cx| {
+            s.set_value("", window, cx);
+            s.set_placeholder(crate::tr!("chat.reply_placeholder"), window, cx);
+        });
         self.pending = true;
         self.sync_to_app(cx);
         cx.notify();
@@ -923,10 +1023,12 @@ impl ConversationPanel {
                 let mut started = false;
                 let mut markdown_state = None;
                 let mut thinking_state = None;
+                let mut token_counter = StreamingTokenCounter::default();
                 while let Some(message) = rx.next().await {
                     _ = panel.update(cx, |this, cx| {
                         match message {
                             StreamMsg::Delta(delta) => {
+                                let token_stats = token_counter.record_delta(&delta);
                                 this.append_streaming_answer_delta(
                                     delta,
                                     &model,
@@ -935,8 +1037,10 @@ impl ConversationPanel {
                                     &mut markdown_state,
                                     cx,
                                 );
+                                this.update_streaming_token_stats(token_stats);
                             }
                             StreamMsg::ReasoningDelta(delta) => {
+                                let token_stats = token_counter.record_delta(&delta);
                                 this.append_streaming_thinking_delta(
                                     delta,
                                     &model,
@@ -945,6 +1049,7 @@ impl ConversationPanel {
                                     &mut thinking_state,
                                     cx,
                                 );
+                                this.update_streaming_token_stats(token_stats);
                             }
                             StreamMsg::ReasoningFinal(thinking) => {
                                 this.set_streaming_thinking(
@@ -955,6 +1060,10 @@ impl ConversationPanel {
                                     &mut thinking_state,
                                     cx,
                                 );
+                            }
+                            StreamMsg::TokenUsage { output_tokens } => {
+                                let token_stats = token_counter.record_usage(output_tokens);
+                                this.update_streaming_token_stats(token_stats);
                             }
                             StreamMsg::ToolStarted { title, input } => {
                                 this.append_streaming_tool_started(
@@ -982,6 +1091,7 @@ impl ConversationPanel {
                                     &mut markdown_state,
                                     cx,
                                 );
+                                this.clear_streaming_token_stats();
                                 this.pending = false;
                             }
                         }
@@ -1016,6 +1126,7 @@ impl ConversationPanel {
                     model,
                     mode,
                     created_at_ms: Some(current_time_ms()),
+                    token_stats: None,
                     attachments: Vec::new(),
                     blocks,
                 });
@@ -1843,29 +1954,239 @@ impl ConversationPanel {
     fn render_empty_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .w_full()
-            .max_w(px(700.))
+            .max_w(px(674.))
             .items_center()
             .px_5()
-            .pt(px(52.))
-            .pb_5()
+            .pt(px(42.))
+            .pb_8()
             .child(
                 h_flex()
-                    .gap_3p5()
+                    .gap_3()
                     .items_center()
                     .justify_center()
                     .flex_wrap()
-                    .mb(px(28.))
-                    .child(div().text_color(accent()).text_size(px(40.)).child("✳"))
+                    .mb(px(34.))
+                    .child(Icon::new(IconName::Asterisk).size_8().text_color(accent()))
                     .child(
                         div()
-                            .text_size(px(38.))
+                            .text_size(px(40.))
+                            .line_height(relative(1.))
+                            .text_center()
                             .text_color(text_color())
                             .child(crate::tr!("chat.empty_title")),
                     ),
             )
-            .child(self.render_input_box(cx))
+            .child(self.render_home_input_box(cx))
             .child(self.render_pills(cx))
             .child(self.render_setup(cx))
+    }
+
+    fn render_mic_glyph(color: Hsla) -> impl IntoElement {
+        div()
+            .relative()
+            .size_5()
+            .child(
+                div()
+                    .absolute()
+                    .top(px(2.))
+                    .left(px(7.))
+                    .w(px(6.))
+                    .h(px(10.))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(color),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(12.))
+                    .left(px(9.5))
+                    .w(px(1.))
+                    .h(px(5.))
+                    .rounded_full()
+                    .bg(color),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(17.))
+                    .left(px(6.))
+                    .w(px(8.))
+                    .h(px(1.))
+                    .rounded_full()
+                    .bg(color),
+            )
+    }
+
+    fn render_voice_wave_glyph(color: Hsla) -> impl IntoElement {
+        h_flex()
+            .h(px(20.))
+            .w(px(24.))
+            .gap_0p5()
+            .items_center()
+            .justify_center()
+            .children(
+                [7., 12., 17., 12., 7.]
+                    .into_iter()
+                    .map(move |height| div().w(px(1.5)).h(px(height)).rounded_full().bg(color)),
+            )
+    }
+
+    fn render_home_input_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let input = self.input.clone();
+        let input_for_send = input.clone();
+        let (current_model, adaptive, web_search, _) = self.root_settings(cx);
+        let model_label = if current_model.is_empty() {
+            crate::tr!("chat.select_model")
+        } else {
+            current_model.clone()
+        };
+        let show_effort = !current_model.is_empty();
+        let has_composer_content =
+            !self.input.read(cx).value().trim().is_empty() || !self.pending_images.is_empty();
+        let can_send = has_composer_content && !self.pending;
+        let app = self.app.clone();
+        let id = self.id;
+        let panel = cx.entity().downgrade();
+
+        v_flex()
+            .w_full()
+            .min_h(px(124.))
+            .bg(white_color())
+            .border_1()
+            .border_color(border_color())
+            .rounded(px(18.))
+            .shadow_sm()
+            .overflow_hidden()
+            .when(!self.pending_images.is_empty(), |this| {
+                this.child(self.render_pending_images(cx))
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .w_full()
+                    .min_h(px(60.))
+                    .px_4()
+                    .pt_3p5()
+                    .text_size(px(14.5))
+                    .text_color(text_color())
+                    .child(Input::new(&input).appearance(false).bordered(false)),
+            )
+            .child(
+                h_flex()
+                    .px_3()
+                    .pb_3()
+                    .pt_1()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        Popover::new(format!("home-add-menu-{id}"))
+                            .anchor(Anchor::BottomLeft)
+                            .p_0()
+                            .trigger(
+                                Button::new(format!("home-add-btn-{id}"))
+                                    .ghost()
+                                    .small()
+                                    .compact()
+                                    .rounded(px(8.))
+                                    .icon(IconName::Plus)
+                                    .tooltip(crate::tr!("chat.add_tooltip")),
+                            )
+                            .content(move |_, _, cx| {
+                                add_menu_content(cx, web_search, panel.clone()).into_any_element()
+                            }),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1p5()
+                            .items_center()
+                            .min_w_0()
+                            .child(
+                                Popover::new(format!("home-model-menu-{id}"))
+                                    .anchor(Anchor::BottomRight)
+                                    .p_0()
+                                    .trigger(
+                                        Button::new(format!("home-model-btn-{id}"))
+                                            .ghost()
+                                            .small()
+                                            .rounded(px(8.))
+                                            .child(
+                                                h_flex()
+                                                    .gap_1()
+                                                    .items_center()
+                                                    .min_w_0()
+                                                    .child(
+                                                        div()
+                                                            .max_w(px(170.))
+                                                            .truncate()
+                                                            .child(model_label.clone()),
+                                                    )
+                                                    .when(show_effort, |this| {
+                                                        this.child(
+                                                            div()
+                                                                .text_color(text_3())
+                                                                .child("Medium"),
+                                                        )
+                                                    })
+                                                    .child(
+                                                        Icon::new(IconName::ChevronDown)
+                                                            .size_3()
+                                                            .text_color(text_3()),
+                                                    ),
+                                            ),
+                                    )
+                                    .content({
+                                        let app = app.clone();
+                                        move |_, _, cx| {
+                                            model_menu_content(cx, adaptive, app.clone())
+                                                .into_any_element()
+                                        }
+                                    }),
+                            )
+                            .child(
+                                Button::new(format!("home-mic-btn-{id}"))
+                                    .ghost()
+                                    .small()
+                                    .compact()
+                                    .rounded(px(8.))
+                                    .tooltip(crate::tr!("chat.voice_input"))
+                                    .child(Self::render_mic_glyph(text_color()))
+                                    .on_click(|_, window, cx| {
+                                        window.push_notification(
+                                            Notification::info(crate::tr!("chat.listening_demo")),
+                                            cx,
+                                        );
+                                    }),
+                            )
+                            .child(if can_send {
+                                Button::new(format!("home-send-btn-{id}"))
+                                    .primary()
+                                    .small()
+                                    .compact()
+                                    .rounded(px(8.))
+                                    .icon(IconName::ArrowUp)
+                                    .tooltip(crate::tr!("chat.send_message"))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        let value = input_for_send.read(cx).value().to_string();
+                                        this.send(value, window, cx);
+                                    }))
+                            } else {
+                                Button::new(format!("home-voice-btn-{id}"))
+                                    .ghost()
+                                    .small()
+                                    .compact()
+                                    .rounded(px(8.))
+                                    .tooltip(crate::tr!("chat.voice_input"))
+                                    .child(Self::render_voice_wave_glyph(text_color()))
+                                    .on_click(|_, window, cx| {
+                                        window.push_notification(
+                                            Notification::info(crate::tr!("chat.listening_demo")),
+                                            cx,
+                                        );
+                                    })
+                            }),
+                    ),
+            )
     }
 
     fn pill(
@@ -1880,20 +2201,20 @@ impl ConversationPanel {
         let sample_text = sample.to_string();
         h_flex()
             .id((id, panel_id))
-            .px_3p5()
+            .px_2p5()
             .py_1p5()
             .gap_1p5()
             .items_center()
-            .rounded_full()
+            .rounded(px(7.))
             .border_1()
             .border_color(border_color())
             .bg(white_color())
-            .text_size(px(13.))
-            .text_color(text_2())
+            .text_size(px(13.5))
+            .text_color(text_color())
             .cursor_pointer()
             .shadow_sm()
             .hover(|this| this.bg(pill_hover_bg()).text_color(text_color()))
-            .child(Icon::new(icon).size_3p5())
+            .child(Icon::new(icon).size_3p5().text_color(text_2()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.input
@@ -1904,17 +2225,10 @@ impl ConversationPanel {
 
     fn render_pills(&self, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
-            .mt_3p5()
+            .mt_3()
             .gap_2()
             .flex_wrap()
             .justify_center()
-            .child(self.pill(
-                "panel-pill-code",
-                IconName::SquareTerminal,
-                crate::tr!("chat.pill_code"),
-                crate::tr!("chat.sample_code"),
-                cx,
-            ))
             .child(self.pill(
                 "panel-pill-write",
                 IconName::CaseSensitive,
@@ -1927,6 +2241,13 @@ impl ConversationPanel {
                 IconName::BookOpen,
                 crate::tr!("chat.pill_learn"),
                 crate::tr!("chat.sample_learn"),
+                cx,
+            ))
+            .child(self.pill(
+                "panel-pill-code",
+                IconName::SquareTerminal,
+                crate::tr!("chat.pill_code"),
+                crate::tr!("chat.sample_code"),
                 cx,
             ))
             .child(self.pill(

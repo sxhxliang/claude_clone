@@ -388,6 +388,7 @@ impl ClaudeApp {
             model: "Sonnet 4.6".into(),
             mode,
             created_at_ms: Some(current_time_ms()),
+            token_stats: None,
             attachments: Vec::new(),
             blocks: None,
         }

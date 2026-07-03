@@ -259,6 +259,7 @@ search:
   no_matches: "No matching conversations"
 chat:
   reply_placeholder: "Reply in this pane..."
+  home_placeholder: "How can I help you today?"
   select_model: "Select model"
   mcp_enabled: "MCP servers enabled"
   mcp_disabled: "MCP servers disabled"
@@ -270,7 +271,7 @@ chat:
   stop_response: "Stop response"
   send_message: "Send message"
   enter_message: "Enter a message to send"
-  empty_title: "Jack Henry returns!"
+  empty_title: "Happy Friday, sxhx"
   setup_title: "Get set up with Claude"
   setup_progress: "%{done} of 3 completed"
   setup_cowork: "Hand off tasks in Cowork"
@@ -320,6 +321,7 @@ chat_view:
   opened: "Opened: %{name}"
   thinking_header: "Claude · %{mode} · thinking..."
   message_header: "Claude · %{mode} · %{model}"
+  token_speed: "%{tokens} tokens · %{speed} tokens/s"
 artifacts:
   title: "Artifacts"
   image: "Image"

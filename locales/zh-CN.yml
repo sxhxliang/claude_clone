@@ -259,6 +259,7 @@ search:
   no_matches: "没有匹配的对话"
 chat:
   reply_placeholder: "在此窗格回复..."
+  home_placeholder: "How can I help you today?"
   select_model: "选择模型"
   mcp_enabled: "MCP 服务器已启用"
   mcp_disabled: "MCP 服务器已停用"
@@ -270,7 +271,7 @@ chat:
   stop_response: "停止回复"
   send_message: "发送消息"
   enter_message: "输入消息后发送"
-  empty_title: "Jack Henry 回来了！"
+  empty_title: "Happy Friday, sxhx"
   setup_title: "完成 Claude 设置"
   setup_progress: "已完成 3 项中的 %{done} 项"
   setup_cowork: "把任务交给协作模式"
@@ -320,6 +321,7 @@ chat_view:
   opened: "已打开：%{name}"
   thinking_header: "Claude · %{mode} · 思考中..."
   message_header: "Claude · %{mode} · %{model}"
+  token_speed: "%{tokens} tokens · %{speed} tokens/s"
 artifacts:
   title: "附件"
   image: "图片"

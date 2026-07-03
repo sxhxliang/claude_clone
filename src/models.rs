@@ -17,6 +17,12 @@ pub enum ChatRole {
     Ai,
 }
 
+#[derive(Clone, Copy)]
+pub struct TokenUsageStats {
+    pub output_tokens: usize,
+    pub tokens_per_second: f64,
+}
+
 #[derive(Clone)]
 pub struct ChatMessage {
     pub role: ChatRole,
@@ -25,6 +31,7 @@ pub struct ChatMessage {
     pub model: SharedString,
     pub mode: ChatMode,
     pub created_at_ms: Option<u64>,
+    pub token_stats: Option<TokenUsageStats>,
     pub attachments: Vec<ImageAttachment>,
     /// When present, the AI message renders as a structured block list
     /// (used for `ChatMode::Cowork`). When `None`, falls back to plain `content`.
@@ -444,8 +451,34 @@ struct StoredChatMessage {
     mode: ChatMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     created_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token_stats: Option<StoredTokenUsageStats>,
     #[serde(default)]
     attachments: Vec<ImageAttachment>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredTokenUsageStats {
+    output_tokens: usize,
+    tokens_per_second: f64,
+}
+
+impl From<&TokenUsageStats> for StoredTokenUsageStats {
+    fn from(stats: &TokenUsageStats) -> Self {
+        Self {
+            output_tokens: stats.output_tokens,
+            tokens_per_second: stats.tokens_per_second,
+        }
+    }
+}
+
+impl From<StoredTokenUsageStats> for TokenUsageStats {
+    fn from(stats: StoredTokenUsageStats) -> Self {
+        Self {
+            output_tokens: stats.output_tokens,
+            tokens_per_second: stats.tokens_per_second,
+        }
+    }
 }
 
 impl From<&ChatMessage> for StoredChatMessage {
@@ -457,6 +490,7 @@ impl From<&ChatMessage> for StoredChatMessage {
             model: message.model.to_string(),
             mode: message.mode,
             created_at_ms: message.created_at_ms,
+            token_stats: message.token_stats.as_ref().map(Into::into),
             attachments: message.attachments.clone(),
         }
     }
@@ -471,6 +505,7 @@ impl From<StoredChatMessage> for ChatMessage {
             model: message.model.into(),
             mode: message.mode,
             created_at_ms: message.created_at_ms,
+            token_stats: message.token_stats.map(Into::into),
             attachments: message.attachments,
             blocks: None,
         }

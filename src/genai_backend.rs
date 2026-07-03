@@ -20,7 +20,7 @@ use genai::adapter::AdapterKind;
 use genai::chat::{
     ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent,
     ContentPart, MessageContent, ReasoningEffort, Tool as GenaiTool, ToolCall as GenaiToolCall,
-    ToolResponse as GenaiToolResponse,
+    ToolResponse as GenaiToolResponse, Usage,
 };
 use genai::resolver::{AuthData, Endpoint, ServiceTargetResolver};
 use genai::{Client, ModelIden, ServiceTarget};
@@ -38,6 +38,9 @@ pub(crate) enum StreamMsg {
     Delta(String),
     ReasoningDelta(String),
     ReasoningFinal(String),
+    TokenUsage {
+        output_tokens: usize,
+    },
     ToolStarted {
         title: String,
         input: String,
@@ -68,6 +71,11 @@ impl GenerationCancel {
 pub(crate) struct StreamHandle {
     pub(crate) receiver: UnboundedReceiver<StreamMsg>,
     pub(crate) cancel: GenerationCancel,
+}
+
+fn output_tokens_from_usage(usage: Option<&Usage>) -> Option<usize> {
+    let tokens = usage?.completion_tokens?;
+    usize::try_from(tokens).ok().filter(|tokens| *tokens > 0)
 }
 
 /// Everything a Chat send needs to reach one provider's endpoint. `base_url`
@@ -327,6 +335,7 @@ pub(crate) fn stream_chat(
         let model_id = route.model_id;
         let client = client_for_route(route.kind, route.base_url, route.api_key);
         let mut options = ChatOptions::default()
+            .with_capture_usage(true)
             .with_capture_reasoning_content(true)
             .with_normalize_reasoning_content(true);
         if adaptive_thinking {
@@ -353,6 +362,7 @@ pub(crate) fn stream_chat(
                 .with_capture_tool_calls(true);
         }
 
+        let mut total_output_tokens = 0usize;
         for round in 0..=MAX_MCP_TOOL_ROUNDS {
             if task_cancel.is_cancelled() {
                 return;
@@ -405,6 +415,20 @@ pub(crate) fn stream_chat(
                                                 reasoning.to_string(),
                                             ))
                                             .is_err()
+                                    {
+                                        return; // receiver dropped (panel closed)
+                                    }
+                                }
+                                if let Some(output_tokens) =
+                                    output_tokens_from_usage(end.captured_usage.as_ref())
+                                {
+                                    total_output_tokens =
+                                        total_output_tokens.saturating_add(output_tokens);
+                                    if tx
+                                        .unbounded_send(StreamMsg::TokenUsage {
+                                            output_tokens: total_output_tokens,
+                                        })
+                                        .is_err()
                                     {
                                         return; // receiver dropped (panel closed)
                                     }
