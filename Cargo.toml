@@ -1,7 +1,7 @@
 [package]
 name = "claude_clone"
 description = "High-fidelity Claude desktop UI clone built with GPUI and gpui-component."
-version = "0.5.1"
+version = "0.5.2"
 publish = false
 edition = "2024"
 build = "build.rs"
