@@ -55,14 +55,22 @@ fn load_locations() -> StoreLocations {
 }
 
 fn write_json_pretty<T: Serialize>(path: PathBuf, value: &T) -> Result<(), String> {
-    let json = serde_json::to_vec_pretty(value).map_err(|err| format!("序列化配置失败: {err}"))?;
+    let json = serde_json::to_vec_pretty(value).map_err(|err| {
+        crate::tr!("errors.serialize_config_failed", error = err.to_string()).to_string()
+    })?;
     write_atomic(path, json)
 }
 
 fn write_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|err| format!("创建目录失败 {}: {err}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|err| {
+            crate::tr!(
+                "errors.create_dir_failed",
+                path = parent.display().to_string(),
+                error = err.to_string()
+            )
+            .to_string()
+        })?;
     }
 
     let tmp = path.with_extension(format!(
@@ -72,17 +80,34 @@ fn write_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<(), String> {
             .map(|duration| duration.as_nanos())
             .unwrap_or_default()
     ));
-    std::fs::write(&tmp, bytes)
-        .map_err(|err| format!("写入临时文件失败 {}: {err}", tmp.display()))?;
+    std::fs::write(&tmp, bytes).map_err(|err| {
+        crate::tr!(
+            "errors.write_tmp_failed",
+            path = tmp.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
+    })?;
     std::fs::rename(&tmp, &path).map_err(|err| {
         let _ = std::fs::remove_file(&tmp);
-        format!("保存文件失败 {}: {err}", path.display())
+        crate::tr!(
+            "errors.save_file_failed",
+            path = path.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
     })
 }
 
 pub(crate) fn ensure_writable_dir(path: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(path)
-        .map_err(|err| format!("创建目录失败 {}: {err}", path.display()))?;
+    std::fs::create_dir_all(path).map_err(|err| {
+        crate::tr!(
+            "errors.create_dir_failed",
+            path = path.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
+    })?;
     let probe = path.join(format!(
         ".claude_clone_write_test_{}",
         SystemTime::now()
@@ -90,9 +115,22 @@ pub(crate) fn ensure_writable_dir(path: &std::path::Path) -> Result<(), String> 
             .map(|duration| duration.as_nanos())
             .unwrap_or_default()
     ));
-    std::fs::write(&probe, b"ok").map_err(|err| format!("目录不可写 {}: {err}", path.display()))?;
-    std::fs::remove_file(&probe)
-        .map_err(|err| format!("清理写入探测文件失败 {}: {err}", probe.display()))
+    std::fs::write(&probe, b"ok").map_err(|err| {
+        crate::tr!(
+            "errors.dir_not_writable",
+            path = path.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
+    })?;
+    std::fs::remove_file(&probe).map_err(|err| {
+        crate::tr!(
+            "errors.cleanup_probe_failed",
+            path = probe.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
+    })
 }
 
 pub(crate) fn config_dir() -> Option<PathBuf> {
@@ -102,7 +140,8 @@ pub(crate) fn config_dir() -> Option<PathBuf> {
 pub(crate) fn set_config_dir(path: PathBuf) -> Result<(), String> {
     ensure_writable_dir(&path)?;
     write_json_pretty(
-        location_path().ok_or_else(|| "默认配置目录不可用".to_string())?,
+        location_path()
+            .ok_or_else(|| crate::tr!("errors.default_config_dir_unavailable").to_string())?,
         &StoreLocations {
             config_dir: Some(path),
         },
@@ -110,10 +149,12 @@ pub(crate) fn set_config_dir(path: PathBuf) -> Result<(), String> {
 }
 
 pub(crate) fn reset_config_dir() -> Result<(), String> {
-    let dir = default_config_dir().ok_or_else(|| "默认配置目录不可用".to_string())?;
+    let dir = default_config_dir()
+        .ok_or_else(|| crate::tr!("errors.default_config_dir_unavailable").to_string())?;
     ensure_writable_dir(&dir)?;
     write_json_pretty(
-        location_path().ok_or_else(|| "默认配置目录不可用".to_string())?,
+        location_path()
+            .ok_or_else(|| crate::tr!("errors.default_config_dir_unavailable").to_string())?,
         &StoreLocations { config_dir: None },
     )
 }
@@ -135,28 +176,36 @@ pub(crate) fn default_mcp_config_text() -> String {
 
 pub(crate) fn load_mcp_config_text() -> Result<String, String> {
     let Some(path) = mcp_config_path() else {
-        return Err("配置目录不可用".to_string());
+        return Err(crate::tr!("errors.config_dir_unavailable").to_string());
     };
     if !path.exists() {
         return Ok(default_mcp_config_text());
     }
-    std::fs::read_to_string(&path)
-        .map_err(|err| format!("读取 MCP 配置失败 {}: {err}", path.display()))
+    std::fs::read_to_string(&path).map_err(|err| {
+        crate::tr!(
+            "errors.read_mcp_failed",
+            path = path.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()
+    })
 }
 
 pub(crate) fn save_mcp_config_text(text: &str) -> Result<(PathBuf, String), String> {
-    let value = serde_json::from_str::<serde_json::Value>(text)
-        .map_err(|err| format!("MCP JSON 格式错误: {err}"))?;
+    let value = serde_json::from_str::<serde_json::Value>(text).map_err(|err| {
+        crate::tr!("errors.mcp_json_invalid", error = err.to_string()).to_string()
+    })?;
     if !value.is_object() {
-        return Err("MCP 配置必须是 JSON object".to_string());
+        return Err(crate::tr!("errors.mcp_must_be_object").to_string());
     }
-    let formatted = serde_json::to_string_pretty(&value)
-        .map_err(|err| format!("格式化 MCP JSON 失败: {err}"))?;
+    let formatted = serde_json::to_string_pretty(&value).map_err(|err| {
+        crate::tr!("errors.format_mcp_failed", error = err.to_string()).to_string()
+    })?;
     let Some(path) = mcp_config_path() else {
-        return Err("配置目录不可用".to_string());
+        return Err(crate::tr!("errors.config_dir_unavailable").to_string());
     };
     write_atomic(path.clone(), formatted.as_bytes().to_vec())
-        .map_err(|err| format!("保存 MCP 配置失败: {err}"))?;
+        .map_err(|err| crate::tr!("errors.save_mcp_failed", error = err).to_string())?;
     Ok((path, formatted))
 }
 
@@ -178,7 +227,8 @@ fn load_conversations(path: &str) -> Option<ConversationStore> {
 }
 
 fn save_conversations_result(path: &str, conversations: &ConversationStore) -> Result<(), String> {
-    let path = history_path(path).ok_or_else(|| "存储目录不可用".to_string())?;
+    let path = history_path(path)
+        .ok_or_else(|| crate::tr!("errors.storage_dir_unavailable").to_string())?;
     write_json_pretty(path, conversations)
 }
 
@@ -205,7 +255,8 @@ pub(crate) fn load() -> PersistedState {
 }
 
 pub(crate) fn save(state: &PersistedState) -> Result<(), String> {
-    let path = config_path().ok_or_else(|| "配置目录不可用".to_string())?;
+    let path =
+        config_path().ok_or_else(|| crate::tr!("errors.config_dir_unavailable").to_string())?;
     let config_state = PersistedState {
         providers: state.providers.clone(),
         next_provider_id: state.next_provider_id,
@@ -231,10 +282,16 @@ pub(crate) fn save(state: &PersistedState) -> Result<(), String> {
 }
 
 pub(crate) fn clear_saved_conversations(path: &str) -> Result<(), String> {
-    let path = history_path(path).ok_or_else(|| "存储目录不可用".to_string())?;
+    let path = history_path(path)
+        .ok_or_else(|| crate::tr!("errors.storage_dir_unavailable").to_string())?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(format!("清理历史失败 {}: {err}", path.display())),
+        Err(err) => Err(crate::tr!(
+            "errors.clear_history_failed",
+            path = path.display().to_string(),
+            error = err.to_string()
+        )
+        .to_string()),
     }
 }

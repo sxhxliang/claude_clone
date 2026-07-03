@@ -55,14 +55,6 @@ pub enum ChatMode {
 }
 
 impl ChatMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            ChatMode::Chat => "Chat",
-            ChatMode::Cowork => "Cowork",
-            ChatMode::Code => "Code",
-        }
-    }
-
     pub(crate) fn icon(self) -> IconName {
         match self {
             ChatMode::Chat => IconName::Bot,
@@ -147,6 +139,7 @@ impl Project {
 #[derive(Clone)]
 pub(crate) struct AppSettings {
     pub(crate) current_model: SharedString,
+    pub(crate) locale: SharedString,
     pub(crate) adaptive_thinking: bool,
     pub(crate) web_search: bool,
     pub(crate) memory_enabled: bool,
@@ -165,6 +158,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             current_model: "".into(),
+            locale: crate::i18n::DEFAULT_LOCALE.into(),
             adaptive_thinking: false,
             web_search: true,
             memory_enabled: false,
@@ -646,8 +640,14 @@ fn mcp_enabled_default() -> bool {
     true
 }
 
+fn locale_default() -> String {
+    crate::i18n::DEFAULT_LOCALE.to_string()
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct PersistedAppSettings {
+    #[serde(default = "locale_default")]
+    pub(crate) locale: String,
     #[serde(default = "persist_conversations_default")]
     pub(crate) persist_conversations: bool,
     #[serde(default = "document_parsing_enabled_default")]
@@ -665,6 +665,7 @@ pub(crate) struct PersistedAppSettings {
 impl Default for PersistedAppSettings {
     fn default() -> Self {
         Self {
+            locale: locale_default(),
             persist_conversations: true,
             document_parsing_enabled: true,
             document_ocr_enabled: false,

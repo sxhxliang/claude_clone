@@ -36,7 +36,6 @@ pub(crate) const ARTIFACTS_PANEL_NAME: &str = "ClaudeArtifactsPanel";
 pub(crate) struct SidePanel {
     focus_handle: FocusHandle,
     name: &'static str,
-    title: SharedString,
     kind: SidePanelKind,
     artifact_type_filter: ArtifactTypeFilter,
     artifact_conversation_filter: Option<usize>,
@@ -78,11 +77,11 @@ enum ArtifactFileType {
 }
 
 impl ArtifactFileType {
-    fn label(self) -> &'static str {
+    fn label(self) -> SharedString {
         match self {
-            ArtifactFileType::Image => "Image",
-            ArtifactFileType::Document => "Document",
-            ArtifactFileType::File => "File",
+            ArtifactFileType::Image => crate::tr!("artifacts.image"),
+            ArtifactFileType::Document => crate::tr!("artifacts.document"),
+            ArtifactFileType::File => crate::tr!("artifacts.file"),
         }
     }
 }
@@ -94,10 +93,10 @@ enum ArtifactSource {
 }
 
 impl ArtifactSource {
-    fn label(self) -> &'static str {
+    fn label(self) -> SharedString {
         match self {
-            ArtifactSource::Uploaded => "Uploaded",
-            ArtifactSource::Generated => "Generated",
+            ArtifactSource::Uploaded => crate::tr!("artifacts.uploaded"),
+            ArtifactSource::Generated => crate::tr!("artifacts.generated"),
         }
     }
 }
@@ -118,21 +117,21 @@ impl ArtifactTypeFilter {
         ArtifactTypeFilter::Files,
     ];
 
-    fn label(self) -> &'static str {
+    fn id(self) -> &'static str {
         match self {
-            ArtifactTypeFilter::All => "All",
-            ArtifactTypeFilter::Images => "Images",
-            ArtifactTypeFilter::Documents => "Documents",
-            ArtifactTypeFilter::Files => "Files",
+            ArtifactTypeFilter::All => "all",
+            ArtifactTypeFilter::Images => "images",
+            ArtifactTypeFilter::Documents => "documents",
+            ArtifactTypeFilter::Files => "files",
         }
     }
 
-    fn short_label(self) -> &'static str {
+    fn short_label(self) -> SharedString {
         match self {
-            ArtifactTypeFilter::All => "All",
-            ArtifactTypeFilter::Images => "Images",
-            ArtifactTypeFilter::Documents => "Docs",
-            ArtifactTypeFilter::Files => "Files",
+            ArtifactTypeFilter::All => crate::tr!("artifacts.all"),
+            ArtifactTypeFilter::Images => crate::tr!("artifacts.images"),
+            ArtifactTypeFilter::Documents => crate::tr!("artifacts.docs"),
+            ArtifactTypeFilter::Files => crate::tr!("artifacts.files"),
         }
     }
 
@@ -164,23 +163,23 @@ impl ArtifactTimeFilter {
         ArtifactTimeFilter::Unknown,
     ];
 
-    fn label(self) -> &'static str {
+    fn id(self) -> &'static str {
         match self {
-            ArtifactTimeFilter::All => "All time",
+            ArtifactTimeFilter::All => "all",
             ArtifactTimeFilter::Last24Hours => "24h",
             ArtifactTimeFilter::Last7Days => "7d",
-            ArtifactTimeFilter::Older => "Older",
-            ArtifactTimeFilter::Unknown => "Unknown",
+            ArtifactTimeFilter::Older => "older",
+            ArtifactTimeFilter::Unknown => "unknown",
         }
     }
 
-    fn short_label(self) -> &'static str {
+    fn short_label(self) -> SharedString {
         match self {
-            ArtifactTimeFilter::All => "All",
-            ArtifactTimeFilter::Last24Hours => "24h",
-            ArtifactTimeFilter::Last7Days => "7d",
-            ArtifactTimeFilter::Older => "Older",
-            ArtifactTimeFilter::Unknown => "No date",
+            ArtifactTimeFilter::All => crate::tr!("artifacts.all"),
+            ArtifactTimeFilter::Last24Hours => crate::tr!("artifacts.last_24_hours"),
+            ArtifactTimeFilter::Last7Days => crate::tr!("artifacts.last_7_days"),
+            ArtifactTimeFilter::Older => crate::tr!("artifacts.older"),
+            ArtifactTimeFilter::Unknown => crate::tr!("artifacts.no_date"),
         }
     }
 
@@ -211,7 +210,7 @@ struct ArtifactConversationOption {
 
 fn conversation_title(conversation: &Conversation) -> SharedString {
     if conversation.title.is_empty() {
-        "Untitled conversation".into()
+        crate::tr!("conversation.untitled")
     } else {
         conversation.title.clone()
     }
@@ -265,7 +264,6 @@ impl SidePanel {
         Self {
             focus_handle: cx.focus_handle(),
             name: PROJECTS_PANEL_NAME,
-            title: "Projects".into(),
             kind: SidePanelKind::Projects { app },
             artifact_type_filter: ArtifactTypeFilter::All,
             artifact_conversation_filter: None,
@@ -282,7 +280,6 @@ impl SidePanel {
         Self {
             focus_handle: cx.focus_handle(),
             name: ARTIFACTS_PANEL_NAME,
-            title: "Artifacts".into(),
             kind: SidePanelKind::Artifacts { app },
             artifact_type_filter: ArtifactTypeFilter::All,
             artifact_conversation_filter: None,
@@ -298,7 +295,7 @@ impl Panel for SidePanel {
     }
 
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        self.title.clone()
+        self.localized_title()
     }
 }
 
@@ -334,13 +331,21 @@ impl Render for SidePanel {
                     .text_size(px(13.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(text_color())
-                    .child(self.title.clone()),
+                    .child(self.localized_title()),
             )
             .child(content)
     }
 }
 
 impl SidePanel {
+    fn localized_title(&self) -> SharedString {
+        match self.name {
+            PROJECTS_PANEL_NAME => crate::tr!("project.title"),
+            ARTIFACTS_PANEL_NAME => crate::tr!("artifacts.title"),
+            _ => "".into(),
+        }
+    }
+
     fn render_artifacts(
         &self,
         app: WeakEntity<ClaudeApp>,
@@ -375,9 +380,17 @@ impl SidePanel {
                     .justify_between()
                     .child(div().text_size(px(12.)).text_color(text_3()).child(
                         if count == total_count {
-                            format!("{count} item{}", if count == 1 { "" } else { "s" })
+                            if count == 1 {
+                                crate::tr!("artifacts.single_item_count", count = count)
+                            } else {
+                                crate::tr!("artifacts.item_count", count = count)
+                            }
                         } else {
-                            format!("{count} of {total_count} items")
+                            crate::tr!(
+                                "artifacts.filtered_count",
+                                count = count,
+                                total = total_count
+                            )
                         },
                     )),
             )
@@ -445,19 +458,21 @@ impl SidePanel {
                             .text_size(px(11.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(text_3())
-                            .child("PROJECT TREE"),
+                            .child(crate::tr!("project.tree")),
                     )
-                    .child(div().text_size(px(12.)).text_color(text_3()).child(format!(
-                        "{} project{}",
-                        project_count,
-                        if project_count == 1 { "" } else { "s" }
-                    )))
+                    .child(div().text_size(px(12.)).text_color(text_3()).child(
+                        if project_count == 1 {
+                            crate::tr!("project.single_count", count = project_count)
+                        } else {
+                            crate::tr!("project.count", count = project_count)
+                        },
+                    ))
                     .child(
                         Button::new("project-panel-new")
                             .ghost()
                             .small()
                             .icon(IconName::Plus)
-                            .tooltip("New project")
+                            .tooltip(crate::tr!("project.new_tooltip"))
                             .on_click({
                                 let app = app.clone();
                                 cx.listener(move |_, _, window, cx| {
@@ -488,7 +503,9 @@ impl SidePanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Project name"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::tr!("project.name_placeholder"))
+        });
         window.open_dialog(cx, move |dialog, _, _| {
             let input = input.clone();
             let app = app.clone();
@@ -500,7 +517,7 @@ impl SidePanel {
                             .py_4()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(DialogTitle::new().child("New project")),
+                            .child(DialogTitle::new().child(crate::tr!("project.new_project"))),
                     )
                     .child(
                         v_flex().px_5().py_4().gap_2().child(
@@ -527,15 +544,17 @@ impl SidePanel {
                             .py_3p5()
                             .border_t_1()
                             .border_color(cx.theme().border)
-                            .child(Button::new("cancel-new-project").label("Cancel").on_click(
-                                |_, window, cx| {
-                                    window.close_dialog(cx);
-                                },
-                            ))
+                            .child(
+                                Button::new("cancel-new-project")
+                                    .label(crate::tr!("common.cancel"))
+                                    .on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    }),
+                            )
                             .child(
                                 Button::new("save-new-project")
                                     .primary()
-                                    .label("Create")
+                                    .label(crate::tr!("common.create"))
                                     .on_click({
                                         let input = input.clone();
                                         let app = app.clone();
@@ -548,7 +567,9 @@ impl SidePanel {
                                                 if created {
                                                     window.close_dialog(cx);
                                                     window.push_notification(
-                                                        Notification::success("Project created"),
+                                                        Notification::success(crate::tr!(
+                                                            "project.created"
+                                                        )),
                                                         cx,
                                                     );
                                                 }
@@ -630,7 +651,7 @@ impl SidePanel {
                             .pb_3()
                             .text_size(px(12.))
                             .text_color(text_3())
-                            .child("No conversations"),
+                            .child(crate::tr!("project.no_conversations")),
                     )
                 } else {
                     this.child(
@@ -915,7 +936,7 @@ impl SidePanel {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Ellipsis)
-                            .tooltip("Conversation actions"),
+                            .tooltip(crate::tr!("nav.conversation_actions")),
                     )
                     .content(move |_, _, cx| {
                         Self::project_row_menu_content(
@@ -960,7 +981,7 @@ impl SidePanel {
             .child(menu_item(
                 "project-row-open",
                 IconName::Inbox,
-                "Open conversation",
+                crate::tr!("project.open_conversation"),
                 move |window, cx| {
                     if let Some(app) = weak_open.upgrade() {
                         app.update(cx, |app, cx| app.select_conversation(id, window, cx));
@@ -971,7 +992,7 @@ impl SidePanel {
             .child(menu_item(
                 "project-row-rename",
                 IconName::Replace,
-                "Rename conversation",
+                crate::tr!("project.rename_conversation"),
                 move |window, cx| {
                     if let Some(app) = weak_rename.upgrade() {
                         app.update(cx, |app, cx| app.begin_rename_conversation(id, window, cx));
@@ -983,7 +1004,7 @@ impl SidePanel {
             .child(menu_item(
                 "project-row-remove",
                 IconName::Minus,
-                "Remove from project",
+                crate::tr!("project.remove_from_project"),
                 move |window, cx| {
                     if let Some(app) = weak_remove.upgrade() {
                         app.update(cx, |app, cx| {
@@ -1019,7 +1040,7 @@ impl SidePanel {
                     .text_size(px(13.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(text_color())
-                    .child("No projects yet"),
+                    .child(crate::tr!("project.no_projects")),
             )
             .child(
                 div()
@@ -1027,7 +1048,7 @@ impl SidePanel {
                     .text_size(px(12.))
                     .line_height(relative(1.45))
                     .text_color(text_3())
-                    .child("Use Add to project from a chat title to create one."),
+                    .child(crate::tr!("project.no_projects_hint")),
             )
     }
 
@@ -1054,14 +1075,14 @@ impl SidePanel {
 
     fn selected_conversation_filter_label(&self, artifacts: &[ArtifactItem]) -> SharedString {
         let Some(selected_id) = self.artifact_conversation_filter else {
-            return "All conversations".into();
+            return crate::tr!("artifacts.all_conversations");
         };
 
         Self::artifact_conversation_options(artifacts)
             .into_iter()
             .find(|option| option.id == selected_id)
             .map(|option| option.title)
-            .unwrap_or_else(|| "Conversation".into())
+            .unwrap_or_else(|| crate::tr!("artifacts.conversation"))
     }
 
     fn render_artifact_filters(
@@ -1103,7 +1124,7 @@ impl SidePanel {
                             .compact()
                             .icon(IconName::Inbox)
                             .label(conversation_label)
-                            .tooltip("Source conversation"),
+                            .tooltip(crate::tr!("artifacts.source_conversation")),
                     )
                     .content(move |_, _, _| {
                         Self::artifact_conversation_filter_menu(
@@ -1136,7 +1157,7 @@ impl SidePanel {
     ) -> Stateful<Div> {
         let selected = self.artifact_type_filter == filter;
         h_flex()
-            .id(format!("artifact-type-filter-{}", filter.label()))
+            .id(format!("artifact-type-filter-{}", filter.id()))
             .h(px(24.))
             .flex_1()
             .min_w_0()
@@ -1170,7 +1191,7 @@ impl SidePanel {
     ) -> Stateful<Div> {
         let selected = self.artifact_time_filter == filter;
         h_flex()
-            .id(format!("artifact-time-filter-{}", filter.label()))
+            .id(format!("artifact-time-filter-{}", filter.id()))
             .h(px(24.))
             .flex_1()
             .min_w_0()
@@ -1212,7 +1233,7 @@ impl SidePanel {
             .child(Self::artifact_conversation_filter_row(
                 "artifact-conversation-all",
                 IconName::Inbox,
-                "All conversations".into(),
+                crate::tr!("artifacts.all_conversations"),
                 None,
                 selected.is_none(),
                 all_panel,
@@ -1274,18 +1295,18 @@ impl SidePanel {
         const DAY_MS: u64 = 24 * HOUR_MS;
 
         let Some(created_at_ms) = created_at_ms else {
-            return "Unknown time".to_string();
+            return crate::tr!("artifacts.unknown_time").to_string();
         };
 
         let elapsed = now_ms.saturating_sub(created_at_ms);
         if elapsed < MINUTE_MS {
-            "Just now".to_string()
+            crate::tr!("artifacts.just_now").to_string()
         } else if elapsed < HOUR_MS {
-            format!("{}m ago", elapsed / MINUTE_MS)
+            crate::tr!("artifacts.minutes_ago", count = elapsed / MINUTE_MS).to_string()
         } else if elapsed < DAY_MS {
-            format!("{}h ago", elapsed / HOUR_MS)
+            crate::tr!("artifacts.hours_ago", count = elapsed / HOUR_MS).to_string()
         } else {
-            format!("{}d ago", elapsed / DAY_MS)
+            crate::tr!("artifacts.days_ago", count = elapsed / DAY_MS).to_string()
         }
     }
 
@@ -1314,9 +1335,9 @@ impl SidePanel {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(text_color())
                     .child(if filtered {
-                        "No matching artifacts"
+                        crate::tr!("artifacts.no_matching")
                     } else {
-                        "No artifacts yet"
+                        crate::tr!("artifacts.none")
                     }),
             )
             .child(
@@ -1326,9 +1347,9 @@ impl SidePanel {
                     .line_height(relative(1.45))
                     .text_color(text_3())
                     .child(if filtered {
-                        "Adjust the filters to see more items."
+                        crate::tr!("artifacts.adjust_filters")
                     } else {
-                        "Images, documents, and generated files appear here."
+                        crate::tr!("artifacts.empty_hint")
                     }),
             )
     }
@@ -1345,11 +1366,11 @@ impl SidePanel {
         let title = artifact.title.clone();
         let title_for_copy = artifact.title.clone();
         let detail = artifact.detail.clone();
-        let meta = format!(
-            "{} · {} · Msg {}",
-            artifact.source.label(),
-            Self::artifact_time_label(artifact.created_at_ms, now_ms),
-            message_ix + 1
+        let meta = crate::tr!(
+            "artifacts.message_meta",
+            source = artifact.source.label().to_string(),
+            time = Self::artifact_time_label(artifact.created_at_ms, now_ms),
+            message = message_ix + 1
         );
         let preview = match artifact.kind.clone() {
             ArtifactPayload::Image(image) => Some(image),
@@ -1405,14 +1426,14 @@ impl SidePanel {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Copy)
-                            .tooltip("Copy name")
+                            .tooltip(crate::tr!("artifacts.copy_name"))
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 cx.write_to_clipboard(ClipboardItem::new_string(
                                     title_for_copy.to_string(),
                                 ));
                                 window.push_notification(
-                                    Notification::info("Artifact name copied"),
+                                    Notification::info(crate::tr!("artifacts.name_copied")),
                                     cx,
                                 );
                             }),
@@ -1422,7 +1443,7 @@ impl SidePanel {
                             .ghost()
                             .xsmall()
                             .icon(IconName::ExternalLink)
-                            .tooltip("Open source message")
+                            .tooltip(crate::tr!("artifacts.open_source_message"))
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 if let Some(app) = open_app.upgrade() {
@@ -1443,7 +1464,7 @@ impl SidePanel {
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::GalleryVerticalEnd)
-                                .tooltip("Preview image")
+                                .tooltip(crate::tr!("artifacts.preview_image"))
                                 .on_click(move |_, window, cx| {
                                     cx.stop_propagation();
                                     Self::open_image_preview(preview.clone(), window, cx);

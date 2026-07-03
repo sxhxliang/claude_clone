@@ -79,7 +79,7 @@ impl ConversationPanel {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .auto_grow(1, 6)
-                .placeholder("Reply in this pane…")
+                .placeholder(crate::tr!("chat.reply_placeholder"))
         });
         let subscriptions = vec![
             cx.subscribe_in(&input, window, {
@@ -176,7 +176,7 @@ impl ConversationPanel {
 
     fn title_or_untitled(&self) -> SharedString {
         if self.title.is_empty() {
-            "Untitled conversation".into()
+            crate::tr!("conversation.untitled")
         } else {
             self.title.clone()
         }
@@ -200,7 +200,10 @@ impl ConversationPanel {
         cx: &mut Context<Self>,
     ) {
         if target.message_ix >= self.messages.len() {
-            window.push_notification(Notification::info("Source message not found"), cx);
+            window.push_notification(
+                Notification::info(crate::tr!("conversation.source_not_found")),
+                cx,
+            );
             return;
         }
 
@@ -763,8 +766,10 @@ impl ConversationPanel {
             self.title = if text.is_empty() {
                 attachments
                     .first()
-                    .map(|attachment| format!("Image: {}", attachment.title).into())
-                    .unwrap_or_else(|| "Image chat".into())
+                    .map(|attachment| {
+                        crate::tr!("chat.image_title", title = attachment.title.to_string())
+                    })
+                    .unwrap_or_else(|| crate::tr!("chat.image_chat"))
             } else {
                 ClaudeApp::title_from_text(&text)
             };
@@ -826,7 +831,10 @@ impl ConversationPanel {
         self.pending = false;
         self.sync_to_app(cx);
         cx.notify();
-        window.push_notification(Notification::info("Response stopped"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.response_stopped")),
+            cx,
+        );
     }
 
     fn start_reply_for_user(
@@ -860,7 +868,7 @@ impl ConversationPanel {
             };
             let Some(route) = route else {
                 self.push_plain_error_reply(
-                    "⚠ No model selected — add a provider in Settings.".into(),
+                    format!("⚠ {}", crate::tr!("chat.no_model_selected")).into(),
                     model.clone(),
                     mode,
                     cx,
@@ -883,7 +891,7 @@ impl ConversationPanel {
                         }
                         Err(_) => {
                             this.push_plain_error_reply(
-                                "⚠ Image generation task was cancelled.".into(),
+                                format!("⚠ {}", crate::tr!("chat.generation_cancelled")).into(),
                                 model,
                                 mode,
                                 cx,
@@ -1102,7 +1110,7 @@ impl ConversationPanel {
     #[allow(clippy::too_many_arguments)]
     fn push_delete_undo_notification(
         &self,
-        label: &'static str,
+        label: SharedString,
         start_ix: usize,
         messages: Vec<ChatMessage>,
         cowork_user_expanded: Vec<bool>,
@@ -1121,7 +1129,7 @@ impl ConversationPanel {
                 let branch_origin = branch_origin.clone();
                 Button::new("undo-message-delete")
                     .primary()
-                    .label("Undo")
+                    .label(crate::tr!("common.undo"))
                     .on_click(cx.listener(move |notification, _, window, cx| {
                         if let Some(panel) = panel.upgrade() {
                             panel.update(cx, |panel, cx| {
@@ -1241,7 +1249,7 @@ impl ConversationPanel {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some("Select files".into()),
+            prompt: Some(crate::tr!("chat.file_select_prompt")),
         });
 
         cx.spawn_in(window, async move |panel, cx| {
@@ -1283,9 +1291,9 @@ impl ConversationPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let prompt = "Generate an image of a quiet AI workspace with a warm desk lamp, compact tools, and a clean chat interface.";
+        let prompt = crate::tr!("chat.image_generation_sample");
         self.input
-            .update(cx, |s, cx| s.set_value(prompt, window, cx));
+            .update(cx, |s, cx| s.set_value(prompt.to_string(), window, cx));
         self.send(prompt.to_string(), window, cx);
     }
 
@@ -1297,8 +1305,8 @@ impl ConversationPanel {
         let title = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Local image")
-            .to_string();
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| crate::tr!("chat.local_image").to_string());
         let detail = Self::local_image_detail(&path);
         let url = path.to_string_lossy().to_string();
 
@@ -1323,8 +1331,8 @@ impl ConversationPanel {
         let title = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Local document")
-            .to_string();
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| crate::tr!("chat.local_document").to_string());
         let base_detail = Self::local_document_detail(&path);
         let url = path.to_string_lossy().to_string();
         let ocr_detail = Self::document_ocr_detail(&path, document_ocr_enabled);
@@ -1360,8 +1368,8 @@ impl ConversationPanel {
         let title = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Local document")
-            .to_string();
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| crate::tr!("chat.local_document").to_string());
         let base_detail = Self::local_document_detail(&path);
         let ocr_detail = Self::document_ocr_detail(&path, document_ocr_enabled);
         let url = path.to_string_lossy().to_string();
@@ -1607,8 +1615,8 @@ impl ConversationPanel {
                         .ghost()
                         .xsmall()
                         .icon(IconName::Redo2)
-                        .label("Retry")
-                        .tooltip("Retry document parsing")
+                        .label(crate::tr!("common.retry"))
+                        .tooltip(crate::tr!("chat.retry_document"))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.retry_pending_document_parse(ix, window, cx);
                         })),
@@ -1631,7 +1639,7 @@ impl ConversationPanel {
             .as_ref()
             .is_ok_and(|servers| servers.iter().any(|server| server.enabled));
         let model_label = if current_model.is_empty() {
-            SharedString::from("Select model")
+            crate::tr!("chat.select_model")
         } else {
             current_model.clone()
         };
@@ -1647,14 +1655,14 @@ impl ConversationPanel {
                 .icon(IconName::SquareTerminal)
                 .label("MCP")
                 .outline()
-                .tooltip("MCP servers enabled")
+                .tooltip(crate::tr!("chat.mcp_enabled"))
         } else {
             Button::new(format!("panel-mcp-btn-{id}"))
                 .small()
                 .icon(IconName::SquareTerminal)
                 .label("MCP")
                 .ghost()
-                .tooltip("MCP servers disabled")
+                .tooltip(crate::tr!("chat.mcp_disabled"))
         };
 
         v_flex()
@@ -1679,14 +1687,14 @@ impl ConversationPanel {
                                 .text_size(px(12.))
                                 .text_color(text_3())
                                 .child(Icon::new(IconName::Replace).size_3p5())
-                                .child("Editing message"),
+                                .child(crate::tr!("chat.editing_message")),
                         )
                         .child(
                             Button::new(format!("cancel-edit-message-{}-{edit_ix}", self.id))
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::Close)
-                                .tooltip("Cancel edit")
+                                .tooltip(crate::tr!("chat.cancel_edit"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.cancel_editing_user_message(window, cx);
                                 })),
@@ -1738,7 +1746,7 @@ impl ConversationPanel {
                                             .small()
                                             .icon(IconName::Plus)
                                             .outline()
-                                            .tooltip("Add files, skills, connectors"),
+                                            .tooltip(crate::tr!("chat.add_tooltip")),
                                     )
                                     .content(move |_, _, cx| {
                                         add_menu_content(cx, web_search, panel.clone())
@@ -1794,10 +1802,10 @@ impl ConversationPanel {
                                     .ghost()
                                     .small()
                                     .icon(IconName::Bot)
-                                    .tooltip("Voice input")
+                                    .tooltip(crate::tr!("chat.voice_input"))
                                     .on_click(|_, window, cx| {
                                         window.push_notification(
-                                            Notification::info("Listening… (demo)"),
+                                            Notification::info(crate::tr!("chat.listening_demo")),
                                             cx,
                                         );
                                     }),
@@ -1807,7 +1815,7 @@ impl ConversationPanel {
                                     .outline()
                                     .small()
                                     .icon(IconName::Close)
-                                    .tooltip("Stop response")
+                                    .tooltip(crate::tr!("chat.stop_response"))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.stop_generation(window, cx);
                                     }))
@@ -1818,9 +1826,9 @@ impl ConversationPanel {
                                     .icon(IconName::ArrowUp)
                                     .disabled(!can_send)
                                     .tooltip(if can_send {
-                                        "Send message"
+                                        crate::tr!("chat.send_message")
                                     } else {
-                                        "Enter a message to send"
+                                        crate::tr!("chat.enter_message")
                                     })
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         let value = input_for_send.read(cx).value().to_string();
@@ -1851,7 +1859,7 @@ impl ConversationPanel {
                         div()
                             .text_size(px(38.))
                             .text_color(text_color())
-                            .child("Jack Henry returns!"),
+                            .child(crate::tr!("chat.empty_title")),
                     ),
             )
             .child(self.render_input_box(cx))
@@ -1863,11 +1871,12 @@ impl ConversationPanel {
         &self,
         id: &'static str,
         icon: IconName,
-        label: &'static str,
-        sample: &'static str,
+        label: SharedString,
+        sample: SharedString,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let panel_id = self.id;
+        let sample_text = sample.to_string();
         h_flex()
             .id((id, panel_id))
             .px_3p5()
@@ -1887,8 +1896,8 @@ impl ConversationPanel {
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.input
-                    .update(cx, |s, cx| s.set_value(sample, window, cx));
-                this.send(sample.to_string(), window, cx);
+                    .update(cx, |s, cx| s.set_value(sample_text.clone(), window, cx));
+                this.send(sample_text.clone(), window, cx);
             }))
     }
 
@@ -1901,45 +1910,45 @@ impl ConversationPanel {
             .child(self.pill(
                 "panel-pill-code",
                 IconName::SquareTerminal,
-                "Code",
-                "Write me some code for a to-do app",
+                crate::tr!("chat.pill_code"),
+                crate::tr!("chat.sample_code"),
                 cx,
             ))
             .child(self.pill(
                 "panel-pill-write",
                 IconName::CaseSensitive,
-                "Write",
-                "Help me write a compelling cover letter",
+                crate::tr!("chat.pill_write"),
+                crate::tr!("chat.sample_write"),
                 cx,
             ))
             .child(self.pill(
                 "panel-pill-learn",
                 IconName::BookOpen,
-                "Learn",
-                "Teach me something fascinating about the universe",
+                crate::tr!("chat.pill_learn"),
+                crate::tr!("chat.sample_learn"),
                 cx,
             ))
             .child(self.pill(
                 "panel-pill-life",
                 IconName::Heart,
-                "Life stuff",
-                "Give me advice for a healthier daily routine",
+                crate::tr!("chat.pill_life"),
+                crate::tr!("chat.sample_life"),
                 cx,
             ))
             .child(self.pill(
                 "panel-pill-surprise",
                 IconName::Star,
-                "Claude's choice",
-                "Surprise me with something genuinely interesting!",
+                crate::tr!("chat.pill_surprise"),
+                crate::tr!("chat.sample_surprise"),
                 cx,
             ))
     }
 
     fn render_setup(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let labels = [
-            "Hand off tasks in Cowork",
-            "Bring your history over from another AI",
-            "Connect your everyday tools",
+            crate::tr!("chat.setup_cowork"),
+            crate::tr!("chat.setup_history"),
+            crate::tr!("chat.setup_tools"),
         ];
         let done_count = self.setup_done.iter().filter(|x| **x).count();
         let total = labels.len();
@@ -1961,13 +1970,13 @@ impl ConversationPanel {
                             .text_size(px(13.5))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(text_color())
-                            .child("Get set up with Claude"),
+                            .child(crate::tr!("chat.setup_title")),
                     )
                     .child(
                         div()
                             .text_size(px(12.5))
                             .text_color(text_3())
-                            .child(format!("{} of 3 completed", done_count)),
+                            .child(crate::tr!("chat.setup_progress", done = done_count)),
                     ),
             )
             .child(
@@ -2017,7 +2026,7 @@ impl ConversationPanel {
                                 div()
                                     .text_size(px(13.5))
                                     .text_color(if done { text_3() } else { text_color() })
-                                    .child(*label),
+                                    .child(label.clone()),
                             )
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.setup_done[ix] = !this.setup_done[ix];
@@ -2284,7 +2293,10 @@ impl ChatViewState for ConversationPanel {
     fn reveal_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         match crate::system_file::reveal(&path) {
             Ok(()) => {
-                window.push_notification(Notification::info("Opened file location"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("conversation.opened_file_location")),
+                    cx,
+                );
             }
             Err(err) => {
                 window.push_notification(Notification::error(err), cx);
@@ -2301,7 +2313,10 @@ impl ChatViewState for ConversationPanel {
         }
 
         cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
-        window.push_notification(Notification::info("Response copied"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.response_copied")),
+            cx,
+        );
     }
 
     fn branch_conversation_from_message(
@@ -2312,7 +2327,7 @@ impl ChatViewState for ConversationPanel {
     ) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2350,7 +2365,7 @@ impl ChatViewState for ConversationPanel {
     fn delete_ai_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2371,7 +2386,7 @@ impl ChatViewState for ConversationPanel {
         self.sync_to_app(cx);
         cx.notify();
         self.push_delete_undo_notification(
-            "Response deleted",
+            crate::tr!("conversation.response_deleted"),
             ix,
             removed_messages,
             removed_expanded,
@@ -2385,7 +2400,7 @@ impl ChatViewState for ConversationPanel {
     fn regenerate_ai_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2398,7 +2413,10 @@ impl ChatViewState for ConversationPanel {
             .rev()
             .find(|candidate| self.messages[*candidate].role == ChatRole::User)
         else {
-            window.push_notification(Notification::info("No user prompt found"), cx);
+            window.push_notification(
+                Notification::info(crate::tr!("conversation.no_user_prompt")),
+                cx,
+            );
             return;
         };
 
@@ -2406,7 +2424,10 @@ impl ChatViewState for ConversationPanel {
         self.pending = true;
         self.sync_to_app(cx);
         cx.notify();
-        window.push_notification(Notification::info("Regenerating response"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.regenerating")),
+            cx,
+        );
         self.start_reply_for_user(user_ix, window, cx);
     }
 
@@ -2419,13 +2440,16 @@ impl ChatViewState for ConversationPanel {
         }
 
         cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
-        window.push_notification(Notification::info("Message copied"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.message_copied")),
+            cx,
+        );
     }
 
     fn delete_user_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2447,7 +2471,7 @@ impl ChatViewState for ConversationPanel {
         self.sync_to_app(cx);
         cx.notify();
         self.push_delete_undo_notification(
-            "Message deleted",
+            crate::tr!("conversation.message_deleted"),
             ix,
             removed_messages,
             removed_expanded,
@@ -2461,7 +2485,7 @@ impl ChatViewState for ConversationPanel {
     fn edit_user_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2492,7 +2516,7 @@ impl ChatViewState for ConversationPanel {
     ) {
         if self.pending {
             window.push_notification(
-                Notification::info("Wait for the current response to finish"),
+                Notification::info(crate::tr!("conversation.wait_response")),
                 cx,
             );
             return;
@@ -2505,7 +2529,10 @@ impl ChatViewState for ConversationPanel {
         self.pending = true;
         self.sync_to_app(cx);
         cx.notify();
-        window.push_notification(Notification::info("Regenerating response"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.regenerating")),
+            cx,
+        );
         self.start_reply_for_user(ix, window, cx);
     }
 

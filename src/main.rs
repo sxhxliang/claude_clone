@@ -23,12 +23,22 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+rust_i18n::i18n!("locales", fallback = "en");
+
+#[macro_export]
+macro_rules! tr {
+    ($($tokens:tt)*) => {
+        gpui::SharedString::from(rust_i18n::t!($($tokens)*).into_owned())
+    };
+}
+
 mod app_updater;
 mod chat_view;
 mod conversation_panel;
 mod dialogs;
 mod document_parser;
 mod genai_backend;
+mod i18n;
 mod mcp_backend;
 mod menus;
 mod mock_backend;
@@ -128,7 +138,7 @@ impl DockLoadState {
         }
 
         let title = if layout.title.trim().is_empty() {
-            format!("Conversation {}", layout.conversation_id)
+            crate::tr!("conversation.fallback_title", id = layout.conversation_id).to_string()
         } else {
             layout.title
         };
@@ -149,7 +159,7 @@ impl ProjectPickerDialog {
     fn new(app: WeakEntity<ClaudeApp>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("New project name")
+                .placeholder(crate::tr!("project.new_name_placeholder"))
                 .auto_grow(1, 1)
         });
         let subscriptions = vec![cx.subscribe_in(&input, window, {
@@ -187,10 +197,13 @@ impl ProjectPickerDialog {
         });
 
         if assigned {
-            window.push_notification(Notification::success("Added to project"), cx);
+            window.push_notification(Notification::success(crate::tr!("project.added")), cx);
             window.close_dialog(cx);
         } else {
-            window.push_notification(Notification::info("Choose or create a project"), cx);
+            window.push_notification(
+                Notification::info(crate::tr!("project.choose_or_create")),
+                cx,
+            );
         }
     }
 }
@@ -219,7 +232,7 @@ impl Render for ProjectPickerDialog {
                     .py_3p5()
                     .border_b_1()
                     .border_color(border_color())
-                    .child(DialogTitle::new().child("Add to project")),
+                    .child(DialogTitle::new().child(crate::tr!("project.picker_title"))),
             )
             .child(
                 v_flex()
@@ -252,8 +265,8 @@ impl Render for ProjectPickerDialog {
                             .justify_between()
                             .text_size(px(11.5))
                             .text_color(text_3())
-                            .child("Projects")
-                            .child(format!("{} total", projects.len())),
+                            .child(crate::tr!("project.title"))
+                            .child(crate::tr!("project.total", count = projects.len())),
                     )
                     .child(div().max_h(px(260.)).overflow_y_scrollbar().map(|this| {
                         if projects.is_empty() {
@@ -269,7 +282,7 @@ impl Render for ProjectPickerDialog {
                                     .child(
                                         div()
                                             .text_size(px(13.))
-                                            .child("Create a project to save this chat"),
+                                            .child(crate::tr!("project.create_to_save")),
                                     ),
                             )
                         } else {
@@ -322,14 +335,14 @@ impl Render for ProjectPickerDialog {
                     .border_color(border_color())
                     .child(
                         Button::new("project-picker-cancel")
-                            .label("Cancel")
+                            .label(crate::tr!("common.cancel"))
                             .on_click(|_, window, cx| {
                                 window.close_dialog(cx);
                             }),
                     )
                     .child(
                         Button::new("project-picker-save")
-                            .label("Save")
+                            .label(crate::tr!("common.save"))
                             .primary()
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
@@ -440,7 +453,7 @@ impl ClaudeApp {
                 .iter()
                 .find(|message| message.role == ChatRole::User)
                 .map(|message| Self::title_from_text(message.content.as_ref()))
-                .unwrap_or_else(|| "Untitled conversation".into())
+                .unwrap_or_else(|| crate::tr!("conversation.untitled"))
                 .to_string()
         } else {
             source_title.to_string()
@@ -449,7 +462,7 @@ impl ClaudeApp {
         if base.starts_with("Branch: ") {
             base.into()
         } else {
-            format!("Branch: {base}").into()
+            crate::tr!("conversation.branch_prefix", title = base)
         }
     }
 
@@ -641,7 +654,7 @@ impl ClaudeApp {
 
     fn open_conversation_panel(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(panel) = self.ensure_conversation_panel(id, window, cx) else {
-            window.push_notification(Notification::info("Conversation not found"), cx);
+            window.push_notification(Notification::info(crate::tr!("conversation.not_found")), cx);
             return;
         };
 
@@ -715,7 +728,11 @@ impl ClaudeApp {
         }
         self.save_state(cx);
         window.push_notification(
-            Notification::info(if pinned { "Pinned to top" } else { "Unpinned" }),
+            Notification::info(if pinned {
+                crate::tr!("menu.pinned")
+            } else {
+                crate::tr!("menu.unpinned")
+            }),
             cx,
         );
         cx.notify();
@@ -757,7 +774,7 @@ impl ClaudeApp {
             panel.update(cx, |panel, cx| panel.set_project_id(None, cx));
         }
         self.save_state(cx);
-        window.push_notification(Notification::info("Removed from project"), cx);
+        window.push_notification(Notification::info(crate::tr!("project.removed")), cx);
         cx.notify();
     }
 
@@ -812,7 +829,7 @@ impl ClaudeApp {
                 .iter()
                 .find(|message| message.role == ChatRole::User)
                 .map(|message| Self::title_from_text(message.content.as_ref()))
-                .unwrap_or_else(|| "Untitled conversation".into())
+                .unwrap_or_else(|| crate::tr!("conversation.untitled"))
         } else {
             source_title
         };
@@ -846,7 +863,7 @@ impl ClaudeApp {
         self.activate_conversation_snapshot(&conversation, cx);
         self.add_panel_to_center_dock(panel, window, cx);
         self.save_state(cx);
-        window.push_notification(Notification::info("Conversation branched"), cx);
+        window.push_notification(Notification::info(crate::tr!("conversation.branched")), cx);
     }
 
     fn close_conversation_tab(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -907,12 +924,12 @@ impl ClaudeApp {
             .find(|conversation| conversation.id == id)
             .map(|conversation| {
                 if conversation.title.is_empty() {
-                    "Untitled conversation".to_string()
+                    crate::tr!("conversation.untitled").to_string()
                 } else {
                     conversation.title.to_string()
                 }
             })
-            .unwrap_or_else(|| "this conversation".to_string());
+            .unwrap_or_else(|| crate::tr!("conversation.this_conversation").to_string());
         let app = cx.entity().downgrade();
 
         window.open_dialog(cx, move |dialog, _, _| {
@@ -926,7 +943,9 @@ impl ClaudeApp {
                             .py_4()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(DialogTitle::new().child("Delete conversation?")),
+                            .child(
+                                DialogTitle::new().child(crate::tr!("conversation.delete_title")),
+                            ),
                     )
                     .child(
                         v_flex()
@@ -937,7 +956,7 @@ impl ClaudeApp {
                                 div()
                                     .text_size(px(13.))
                                     .text_color(text_color())
-                                    .child("This will remove the conversation from the workspace."),
+                                    .child(crate::tr!("conversation.delete_body")),
                             )
                             .child(
                                 div()
@@ -955,7 +974,7 @@ impl ClaudeApp {
                             .border_color(cx.theme().border)
                             .child(
                                 Button::new("cancel-delete-conversation")
-                                    .label("Cancel")
+                                    .label(crate::tr!("common.cancel"))
                                     .on_click(|_, window, cx| {
                                         window.close_dialog(cx);
                                     }),
@@ -963,7 +982,7 @@ impl ClaudeApp {
                             .child(
                                 Button::new("confirm-delete-conversation")
                                     .primary()
-                                    .label("Delete")
+                                    .label(crate::tr!("common.delete"))
                                     .on_click({
                                         let app = app.clone();
                                         move |_, window, cx| {
@@ -983,7 +1002,7 @@ impl ClaudeApp {
 
     fn delete_conversation_now(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.close_conversation_tab(id, window, cx);
-        window.push_notification(Notification::info("Conversation deleted"), cx);
+        window.push_notification(Notification::info(crate::tr!("conversation.deleted")), cx);
     }
 
     fn conversation_panel_layout(info: &PanelInfo) -> Option<ConversationPanelLayout> {
@@ -1199,8 +1218,18 @@ impl ClaudeApp {
     }
 
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let title_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Untitled conversation"));
+        let PersistedState {
+            providers,
+            next_provider_id: saved_next_provider_id,
+            current,
+            settings: saved_settings,
+            conversations: saved_conversations,
+            projects: saved_projects,
+            dock_layout,
+        } = store::load();
+        let locale = crate::i18n::set_locale(&saved_settings.locale);
+        let title_input = cx
+            .new(|cx| InputState::new(window, cx).placeholder(crate::tr!("conversation.untitled")));
 
         let mut subs: Vec<Subscription> = vec![cx.subscribe_in(&title_input, window, {
             move |this, _, ev: &InputEvent, window, cx| match ev {
@@ -1215,16 +1244,6 @@ impl ClaudeApp {
                 _ => {}
             }
         })];
-
-        let PersistedState {
-            providers,
-            next_provider_id: saved_next_provider_id,
-            current,
-            settings: saved_settings,
-            conversations: saved_conversations,
-            projects: saved_projects,
-            dock_layout,
-        } = store::load();
         let persist_conversations = saved_settings.persist_conversations;
         let document_parsing_enabled = saved_settings.document_parsing_enabled;
         let document_ocr_enabled = saved_settings.document_ocr_enabled;
@@ -1383,6 +1402,7 @@ impl ClaudeApp {
             sidebar_collapsed: false,
             settings: AppSettings {
                 current_model,
+                locale,
                 persist_conversations,
                 document_parsing_enabled,
                 document_ocr_enabled,
@@ -1490,7 +1510,10 @@ impl ClaudeApp {
             return;
         }
         self.new_conversation_tab(window, cx);
-        window.push_notification(Notification::info("New conversation started"), cx);
+        window.push_notification(
+            Notification::info(crate::tr!("conversation.new_started")),
+            cx,
+        );
     }
 
     /// Enter inline-rename mode for the chat title.
@@ -1535,6 +1558,7 @@ impl ClaudeApp {
             next_provider_id: self.next_provider_id,
             current: self.current_model_ref.clone(),
             settings: PersistedAppSettings {
+                locale: self.settings.locale.to_string(),
                 persist_conversations,
                 document_parsing_enabled: self.settings.document_parsing_enabled,
                 document_ocr_enabled: self.settings.document_ocr_enabled,
@@ -1604,6 +1628,21 @@ impl ClaudeApp {
         cx.notify();
     }
 
+    pub(crate) fn set_locale(&mut self, locale: &str, cx: &mut Context<Self>) {
+        let locale = crate::i18n::set_locale(locale);
+        if self.settings.locale == locale {
+            return;
+        }
+        self.settings.locale = locale;
+        self.save_state(cx);
+        self.sidebar.update(cx, |_, cx| cx.notify());
+        self.top_bar.update(cx, |_, cx| cx.notify());
+        for panel in self.conversation_panels.values() {
+            panel.update(cx, |_, cx| cx.notify());
+        }
+        cx.notify();
+    }
+
     pub(crate) fn set_mcp_server_enabled(
         &mut self,
         server_name: String,
@@ -1633,7 +1672,8 @@ impl ClaudeApp {
     }
 
     pub(crate) fn reset_storage_dir(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
-        let path = store::default_storage_dir().ok_or_else(|| "默认存储目录不可用".to_string())?;
+        let path = store::default_storage_dir()
+            .ok_or_else(|| crate::tr!("errors.default_storage_dir_unavailable").to_string())?;
         store::ensure_writable_dir(&path)?;
         self.settings.storage_dir = Self::path_label(Some(path));
         self.save_state(cx);
@@ -1677,6 +1717,7 @@ impl ClaudeApp {
             next_provider_id: self.next_provider_id,
             current: self.current_model_ref.clone(),
             settings: PersistedAppSettings {
+                locale: self.settings.locale.to_string(),
                 persist_conversations: self.settings.persist_conversations,
                 document_parsing_enabled: self.settings.document_parsing_enabled,
                 document_ocr_enabled: self.settings.document_ocr_enabled,
@@ -1906,20 +1947,24 @@ impl ClaudeApp {
 
     pub(crate) fn update_menu_label(&self, cx: &App) -> SharedString {
         match self.updater.read(cx).status() {
-            UpdateStatus::Idle => "Check for updates".into(),
-            UpdateStatus::Checking => "Checking for updates...".into(),
-            UpdateStatus::UpToDate => "Up to date".into(),
-            UpdateStatus::Available(version) => format!("Install update {version}").into(),
+            UpdateStatus::Idle => crate::tr!("updates.check"),
+            UpdateStatus::Checking => crate::tr!("updates.checking"),
+            UpdateStatus::UpToDate => crate::tr!("updates.up_to_date"),
+            UpdateStatus::Available(version) => {
+                crate::tr!("updates.install", version = version.to_string())
+            }
             UpdateStatus::Downloading { downloaded, total } => match total {
                 Some(total) if *total > 0 => {
                     let pct = (*downloaded as f64 / *total as f64 * 100.0).clamp(0.0, 100.0);
-                    format!("Downloading update {pct:.0}%").into()
+                    crate::tr!("updates.downloading_pct", percent = format!("{pct:.0}"))
                 }
-                _ => "Downloading update...".into(),
+                _ => crate::tr!("updates.downloading"),
             },
-            UpdateStatus::Installing => "Installing update...".into(),
-            UpdateStatus::Staged(version) => format!("Restart to update to {version}").into(),
-            UpdateStatus::Errored(_) => "Retry update check".into(),
+            UpdateStatus::Installing => crate::tr!("updates.installing"),
+            UpdateStatus::Staged(version) => {
+                crate::tr!("updates.staged", version = version.to_string())
+            }
+            UpdateStatus::Errored(_) => crate::tr!("updates.retry"),
         }
     }
 
@@ -1928,12 +1973,18 @@ impl ClaudeApp {
         match status {
             UpdateStatus::Idle | UpdateStatus::UpToDate | UpdateStatus::Errored(_) => {
                 self.updater.update(cx, |updater, cx| updater.check(cx));
-                window.push_notification(Notification::info("Checking for updates"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("updates.checking_notice")),
+                    cx,
+                );
             }
             UpdateStatus::Available(_) => {
                 self.updater
                     .update(cx, |updater, cx| updater.download_and_install(cx));
-                window.push_notification(Notification::info("Downloading update"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("updates.downloading_notice")),
+                    cx,
+                );
             }
             UpdateStatus::Staged(_) => {
                 self.updater.update(cx, |updater, cx| updater.restart(cx));
@@ -1941,7 +1992,7 @@ impl ClaudeApp {
             UpdateStatus::Checking
             | UpdateStatus::Downloading { .. }
             | UpdateStatus::Installing => {
-                window.push_notification(Notification::info("Update is already in progress"), cx);
+                window.push_notification(Notification::info(crate::tr!("updates.in_progress")), cx);
             }
         }
     }
@@ -1961,7 +2012,8 @@ impl ClaudeApp {
                 ..Default::default()
             };
             let _ = cx.open_window(opts, move |window, cx| {
-                window.set_window_title("Settings");
+                let title = crate::tr!("settings.title");
+                window.set_window_title(title.as_ref());
                 let view = cx.new(|cx| SettingsWindow::new(app.clone(), window, cx));
                 cx.new(|cx| Root::new(view, window, cx).bg(bg_color()))
             });
@@ -2064,11 +2116,11 @@ impl ClaudeApp {
                             .py_3p5()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(DialogTitle::new().child("Customize Claude")),
+                            .child(DialogTitle::new().child(crate::tr!("customize.title"))),
                     )
                     .child(v_flex().px_5().py_2().child(static_row(
-                        "Your name",
-                        "How Claude addresses you",
+                        crate::tr!("customize.your_name"),
+                        crate::tr!("customize.name_hint"),
                         "Jack Henry",
                     )))
                     .child(
@@ -2077,11 +2129,14 @@ impl ClaudeApp {
                             .py_3p5()
                             .border_t_1()
                             .border_color(cx.theme().border)
-                            .child(Button::new("close-cust").label("Done").primary().on_click(
-                                |_, window, cx| {
-                                    window.close_dialog(cx);
-                                },
-                            )),
+                            .child(
+                                Button::new("close-cust")
+                                    .label(crate::tr!("common.done"))
+                                    .primary()
+                                    .on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    }),
+                            ),
                     )
             })
         });

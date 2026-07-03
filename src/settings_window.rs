@@ -29,6 +29,7 @@ pub(crate) struct SettingsWindow {
 }
 
 struct GeneralSettingsSnapshot {
+    locale: SharedString,
     memory: bool,
     websearch: bool,
     typing: bool,
@@ -48,10 +49,10 @@ impl SettingsWindow {
     ) -> Self {
         let provider_settings = cx.new(|cx| ProviderSettings::new(app.clone(), window, cx));
         let (mcp_text, mcp_status, mcp_error) = match store::load_mcp_config_text() {
-            Ok(text) => (text, "mcp.json 已加载".into(), None),
+            Ok(text) => (text, crate::tr!("settings.mcp.loaded"), None),
             Err(err) => (
                 store::default_mcp_config_text(),
-                "使用默认 MCP 配置模板".into(),
+                crate::tr!("settings.mcp.default_template"),
                 Some(err.into()),
             ),
         };
@@ -69,7 +70,7 @@ impl SettingsWindow {
                 if matches!(event, InputEvent::Change) {
                     this.mcp_dirty = true;
                     this.mcp_error = None;
-                    this.mcp_status = "MCP 配置有未保存更改".into();
+                    this.mcp_status = crate::tr!("settings.mcp.dirty");
                     cx.notify();
                 }
             },
@@ -93,10 +94,7 @@ impl SettingsWindow {
     ) -> impl IntoElement {
         let selected = self.selected_section == section;
         h_flex()
-            .id(SharedString::from(format!(
-                "settings-nav-{}",
-                section.label()
-            )))
+            .id(SharedString::from(format!("settings-nav-{}", section.id())))
             .w_full()
             .px_3()
             .py_3()
@@ -148,6 +146,29 @@ impl SettingsWindow {
             )
     }
 
+    fn render_locale_button(
+        &self,
+        code: &'static str,
+        current_locale: &SharedString,
+        app: WeakEntity<ClaudeApp>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let selected = current_locale.as_ref() == crate::i18n::normalize_locale(code);
+        Button::new(SharedString::from(format!("settings-locale-{code}")))
+            .small()
+            .label(crate::i18n::language_name(code))
+            .when(selected, |this| this.primary())
+            .when(!selected, |this| this.outline())
+            .on_click(cx.listener(move |_, _, _, cx| {
+                if let Some(app) = app.upgrade() {
+                    app.update(cx, |app, cx| {
+                        app.set_locale(code, cx);
+                    });
+                }
+                cx.notify();
+            }))
+    }
+
     fn render_general_settings(
         &self,
         settings: GeneralSettingsSnapshot,
@@ -169,18 +190,60 @@ impl SettingsWindow {
                             .text_size(px(30.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(text_color())
-                            .child("通用"),
+                            .child(crate::tr!("settings.general.title")),
                     )
                     .child(
                         div()
                             .pb_4()
                             .text_size(px(13.))
                             .text_color(text_3())
-                            .child("配置对话体验、联网检索与记忆行为。"),
+                            .child(crate::tr!("settings.general.description")),
+                    )
+                    .child(
+                        h_flex()
+                            .py_3()
+                            .items_center()
+                            .justify_between()
+                            .border_b_1()
+                            .border_color(border_color())
+                            .gap_4()
+                            .child(
+                                v_flex()
+                                    .min_w_0()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .text_size(px(13.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(crate::tr!("settings.language.title")),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(text_3())
+                                            .child(crate::tr!("settings.language.description")),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(self.render_locale_button(
+                                        crate::i18n::EN_LOCALE,
+                                        &settings.locale,
+                                        app.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_locale_button(
+                                        crate::i18n::ZH_CN_LOCALE,
+                                        &settings.locale,
+                                        app.clone(),
+                                        cx,
+                                    )),
+                            ),
                     )
                     .child(settings_row_switch(
-                        "保存聊天历史",
-                        "重启后恢复 Chat 模式对话、标题与窗口布局",
+                        crate::tr!("settings.general.persist_history"),
+                        crate::tr!("settings.general.persist_history_sub"),
                         "persist-chat-history-tog",
                         settings.persist_conversations,
                         {
@@ -195,8 +258,8 @@ impl SettingsWindow {
                         },
                     ))
                     .child(settings_row_switch(
-                        "文档解析",
-                        "添加附件时解析文档内容并随 Chat 请求发送",
+                        crate::tr!("settings.general.document_parsing"),
+                        crate::tr!("settings.general.document_parsing_sub"),
                         "document-parsing-tog",
                         settings.document_parsing_enabled,
                         {
@@ -211,8 +274,8 @@ impl SettingsWindow {
                         },
                     ))
                     .child(settings_row_switch(
-                        "启用 OCR",
-                        "解析扫描件和图片文字，可能增加附件处理时间",
+                        crate::tr!("settings.general.document_ocr"),
+                        crate::tr!("settings.general.document_ocr_sub"),
                         "document-ocr-tog",
                         settings.document_ocr_enabled,
                         {
@@ -242,13 +305,13 @@ impl SettingsWindow {
                                         div()
                                             .text_size(px(13.5))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .child("存储目录"),
+                                            .child(crate::tr!("settings.general.storage_dir")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(12.))
                                             .text_color(text_3())
-                                            .child("保存对话历史与窗口布局数据"),
+                                            .child(crate::tr!("settings.general.storage_dir_sub")),
                                     )
                                     .child(
                                         div()
@@ -263,14 +326,16 @@ impl SettingsWindow {
                                 h_flex()
                                     .gap_2()
                                     .child(
-                                        Button::new("choose-storage-dir").label("选择").on_click({
+                                        Button::new("choose-storage-dir").label(crate::tr!("common.choose")).on_click({
                                             cx.listener(|this, _, window, cx| {
                                                 let paths =
                                                     cx.prompt_for_paths(PathPromptOptions {
                                                         files: false,
                                                         directories: true,
                                                         multiple: false,
-                                                        prompt: Some("选择存储目录".into()),
+                                                        prompt: Some(crate::tr!(
+                                                            "settings.general.choose_storage_dir"
+                                                        )),
                                                     });
                                                 let app = this.app.clone();
                                                 cx.spawn_in(window, async move |settings, cx| {
@@ -287,7 +352,9 @@ impl SettingsWindow {
                                                                 app.set_storage_dir(path, cx)
                                                             }) {
                                                             Ok(()) => {
-                                                                Notification::success("存储目录已更新")
+                                                                Notification::success(crate::tr!(
+                                                                    "settings.general.storage_updated"
+                                                                ))
                                                             }
                                                             Err(err) => Notification::error(err),
                                                         };
@@ -305,7 +372,7 @@ impl SettingsWindow {
                                         }),
                                     )
                                     .child(
-                                        Button::new("reset-storage-dir").label("重置").on_click({
+                                        Button::new("reset-storage-dir").label(crate::tr!("common.reset")).on_click({
                                             let app = app.clone();
                                             move |_, window, cx| {
                                                 if let Some(v) = app.upgrade() {
@@ -314,7 +381,9 @@ impl SettingsWindow {
                                                     }) {
                                                         Ok(()) => window.push_notification(
                                                             Notification::success(
-                                                                "存储目录已重置",
+                                                                crate::tr!(
+                                                                    "settings.general.storage_reset"
+                                                                ),
                                                             ),
                                                             cx,
                                                         ),
@@ -345,13 +414,13 @@ impl SettingsWindow {
                                         div()
                                             .text_size(px(13.5))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .child("配置文件目录"),
+                                            .child(crate::tr!("settings.general.config_dir")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(12.))
                                             .text_color(text_3())
-                                            .child("保存供应商、模型与通用配置"),
+                                            .child(crate::tr!("settings.general.config_dir_sub")),
                                     )
                                     .child(
                                         div()
@@ -365,7 +434,7 @@ impl SettingsWindow {
                             .child(
                                 h_flex()
                                     .gap_2()
-                                    .child(Button::new("choose-config-dir").label("选择").on_click(
+                                    .child(Button::new("choose-config-dir").label(crate::tr!("common.choose")).on_click(
                                         {
                                             cx.listener(|this, _, window, cx| {
                                                 let paths =
@@ -373,7 +442,9 @@ impl SettingsWindow {
                                                         files: false,
                                                         directories: true,
                                                         multiple: false,
-                                                        prompt: Some("选择配置文件目录".into()),
+                                                        prompt: Some(crate::tr!(
+                                                            "settings.general.choose_config_dir"
+                                                        )),
                                                     });
                                                 let app = this.app.clone();
                                                 cx.spawn_in(window, async move |settings, cx| {
@@ -390,7 +461,9 @@ impl SettingsWindow {
                                                                 app.set_config_dir(path, cx)
                                                             }) {
                                                             Ok(()) => {
-                                                                Notification::success("配置目录已更新")
+                                                                Notification::success(crate::tr!(
+                                                                    "settings.general.config_updated"
+                                                                ))
                                                             }
                                                             Err(err) => Notification::error(err),
                                                         };
@@ -407,7 +480,7 @@ impl SettingsWindow {
                                             })
                                         },
                                     ))
-                                    .child(Button::new("reset-config-dir").label("重置").on_click(
+                                    .child(Button::new("reset-config-dir").label(crate::tr!("common.reset")).on_click(
                                         {
                                             let app = app.clone();
                                             move |_, window, cx| {
@@ -417,7 +490,9 @@ impl SettingsWindow {
                                                     }) {
                                                         Ok(()) => window.push_notification(
                                                             Notification::success(
-                                                                "配置目录已重置",
+                                                                crate::tr!(
+                                                                    "settings.general.config_reset"
+                                                                ),
                                                             ),
                                                             cx,
                                                         ),
@@ -446,8 +521,8 @@ impl SettingsWindow {
                         )
                     })
                     .child(settings_row_switch(
-                        "记忆",
-                        "允许 Claude 记住偏好和上下文",
+                        crate::tr!("settings.general.memory"),
+                        crate::tr!("settings.general.memory_sub"),
                         "memory-tog",
                         settings.memory,
                         {
@@ -463,8 +538,8 @@ impl SettingsWindow {
                         },
                     ))
                     .child(settings_row_switch(
-                        "联网搜索",
-                        "默认允许对话使用联网检索",
+                        crate::tr!("settings.general.web_search"),
+                        crate::tr!("settings.general.web_search_sub"),
                         "ws-tog",
                         settings.websearch,
                         {
@@ -480,8 +555,8 @@ impl SettingsWindow {
                         },
                     ))
                     .child(settings_row_switch(
-                        "显示输入指示器",
-                        "Claude 思考时显示动态状态",
+                        crate::tr!("settings.general.typing"),
+                        crate::tr!("settings.general.typing_sub"),
                         "typ-tog",
                         settings.typing,
                         {
@@ -503,7 +578,7 @@ impl SettingsWindow {
                             .text_size(px(12.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(cx.theme().danger)
-                            .child("危险操作"),
+                            .child(crate::tr!("settings.general.danger")),
                     )
                     .child(
                         h_flex()
@@ -519,18 +594,18 @@ impl SettingsWindow {
                                         div()
                                             .text_size(px(13.5))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .child("清空已保存历史"),
+                                            .child(crate::tr!("settings.general.clear_history")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(12.))
                                             .text_color(text_3())
-                                            .child("只清理磁盘中的历史记录，不关闭当前窗口"),
+                                            .child(crate::tr!("settings.general.clear_history_sub")),
                                     ),
                             )
                             .child(
                                 Button::new("clear-saved-chat-history")
-                                    .label("清空")
+                                    .label(crate::tr!("common.clear"))
                                     .on_click({
                                         let app = app.clone();
                                         move |_, window, cx| {
@@ -547,7 +622,7 @@ impl SettingsWindow {
                                                                     .border_b_1()
                                                                     .border_color(cx.theme().border)
                                                                     .child(DialogTitle::new().child(
-                                                                        "清空已保存历史？",
+                                                                        crate::tr!("settings.general.clear_history_title"),
                                                                     )),
                                                             )
                                                             .child(
@@ -560,17 +635,9 @@ impl SettingsWindow {
                                                                             .text_size(px(13.))
                                                                             .text_color(text_color())
                                                                             .child(
-                                                                                "这只会清理磁盘中的聊天历史，不关闭当前窗口。",
+                                                                                crate::tr!("settings.general.clear_history_body"),
                                                                             ),
                                                                     )
-                                                                    .child(
-                                                                        div()
-                                                                            .text_size(px(12.))
-                                                                            .text_color(text_3())
-                                                                            .child(
-                                                                                "下次启动时这些历史不会恢复。",
-                                                                            ),
-                                                                    ),
                                                             )
                                                             .child(
                                                                 DialogFooter::new()
@@ -582,7 +649,7 @@ impl SettingsWindow {
                                                                         Button::new(
                                                                             "cancel-clear-history",
                                                                         )
-                                                                        .label("取消")
+                                                                        .label(crate::tr!("common.cancel"))
                                                                         .on_click(
                                                                             |_, window, cx| {
                                                                                 window
@@ -595,7 +662,7 @@ impl SettingsWindow {
                                                                             "confirm-clear-history",
                                                                         )
                                                                         .primary()
-                                                                        .label("清空")
+                                                                        .label(crate::tr!("common.clear"))
                                                                         .on_click({
                                                                             let app = app.clone();
                                                                             move |_, window, cx| {
@@ -613,7 +680,7 @@ impl SettingsWindow {
                                                                                         Ok(()) => {
                                                                                             window.push_notification(
                                                                                                 Notification::info(
-                                                                                                    "已清空保存的对话历史",
+                                                                                                    crate::tr!("settings.general.history_cleared"),
                                                                                                 ),
                                                                                                 cx,
                                                                                             );
@@ -647,12 +714,15 @@ impl SettingsWindow {
                     .update(cx, |state, cx| state.set_value(text, window, cx));
                 self.mcp_dirty = false;
                 self.mcp_error = None;
-                self.mcp_status = "mcp.json 已重新加载".into();
-                window.push_notification(Notification::success("MCP 配置已重新加载"), cx);
+                self.mcp_status = crate::tr!("settings.mcp.reloaded");
+                window.push_notification(
+                    Notification::success(crate::tr!("settings.mcp.reloaded")),
+                    cx,
+                );
             }
             Err(err) => {
                 self.mcp_error = Some(err.clone().into());
-                self.mcp_status = "重新加载失败".into();
+                self.mcp_status = crate::tr!("settings.mcp.reload_failed");
                 window.push_notification(Notification::error(err), cx);
             }
         }
@@ -667,12 +737,14 @@ impl SettingsWindow {
                     .update(cx, |state, cx| state.set_value(formatted, window, cx));
                 self.mcp_dirty = false;
                 self.mcp_error = None;
-                self.mcp_status = format!("已保存到 {}", path.display()).into();
-                window.push_notification(Notification::success("MCP 配置已保存"), cx);
+                self.mcp_status =
+                    crate::tr!("settings.mcp.saved_to", path = path.display().to_string());
+                window
+                    .push_notification(Notification::success(crate::tr!("settings.mcp.saved")), cx);
             }
             Err(err) => {
                 self.mcp_error = Some(err.clone().into());
-                self.mcp_status = "保存失败".into();
+                self.mcp_status = crate::tr!("settings.mcp.save_failed");
                 window.push_notification(Notification::error(err), cx);
             }
         }
@@ -682,7 +754,7 @@ impl SettingsWindow {
     fn render_mcp_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let config_path: SharedString = store::mcp_config_path()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "配置目录不可用".to_string())
+            .unwrap_or_else(|| crate::tr!("common.unavailable").to_string())
             .into();
         let status = self
             .mcp_error
@@ -719,13 +791,13 @@ impl SettingsWindow {
                                             .text_size(px(30.))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(text_color())
-                                            .child("MCP 配置"),
+                                            .child(crate::tr!("settings.mcp.title")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(13.))
                                             .text_color(text_3())
-                                            .child("直接编辑并保存 Chat 模式使用的 mcp.json。"),
+                                            .child(crate::tr!("settings.mcp.description")),
                                     ),
                             )
                             .child(
@@ -733,7 +805,7 @@ impl SettingsWindow {
                                     .gap_2()
                                     .child(
                                         Button::new("reload-mcp-config")
-                                            .label("重新加载")
+                                            .label(crate::tr!("common.reload"))
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.reload_mcp_config(window, cx);
                                             })),
@@ -741,7 +813,7 @@ impl SettingsWindow {
                                     .child(
                                         Button::new("save-mcp-config")
                                             .primary()
-                                            .label("保存")
+                                            .label(crate::tr!("common.save"))
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.save_mcp_config(window, cx);
                                             })),
@@ -755,7 +827,7 @@ impl SettingsWindow {
                                 div()
                                     .text_size(px(12.))
                                     .text_color(text_3())
-                                    .child("文件路径"),
+                                    .child(crate::tr!("settings.mcp.file_path")),
                             )
                             .child(
                                 div()
@@ -795,9 +867,9 @@ impl SettingsWindow {
                             )
                             .child(div().text_size(px(12.)).text_color(text_3()).child(
                                 if self.mcp_dirty {
-                                    "未保存"
+                                    crate::tr!("common.unsaved")
                                 } else {
-                                    "已同步"
+                                    crate::tr!("common.synced")
                                 },
                             )),
                     ),
@@ -832,7 +904,7 @@ impl SettingsWindow {
                                 .text_size(px(13.5))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(text_color())
-                                .child("设置"),
+                                .child(crate::tr!("settings.title")),
                         )
                         .child(
                             div()
@@ -859,6 +931,7 @@ impl Render for SettingsWindow {
                 let app = app.read(cx);
                 let settings = &app.settings;
                 GeneralSettingsSnapshot {
+                    locale: settings.locale.clone(),
                     memory: settings.memory_enabled,
                     websearch: settings.web_search,
                     typing: settings.show_typing,
@@ -871,6 +944,7 @@ impl Render for SettingsWindow {
                 }
             }
             None => GeneralSettingsSnapshot {
+                locale: crate::i18n::DEFAULT_LOCALE.into(),
                 memory: false,
                 websearch: true,
                 typing: true,
@@ -932,14 +1006,14 @@ impl Render for SettingsWindow {
                                                     .text_size(px(18.))
                                                     .font_weight(FontWeight::BOLD)
                                                     .text_color(text_color())
-                                                    .child("设置"),
+                                                    .child(crate::tr!("settings.title")),
                                             )
                                             .child(
                                                 div()
                                                     .pt_1()
                                                     .text_size(px(12.))
                                                     .text_color(text_3())
-                                                    .child("三列结构：分类、供应商、配置"),
+                                                    .child(crate::tr!("settings.subtitle")),
                                             ),
                                     )
                                     .children(nav_items)
@@ -957,7 +1031,7 @@ impl Render for SettingsWindow {
                                                     .text_size(px(12.))
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .text_color(text_2())
-                                                    .child("当前窗口专用于设置管理。"),
+                                                    .child(crate::tr!("settings.window_note")),
                                             ),
                                     ),
                             ),

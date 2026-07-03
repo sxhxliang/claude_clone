@@ -139,7 +139,7 @@ fn avatar_color(kind: ProviderKind) -> Hsla {
 }
 
 /// The endpoint path each provider kind appends to its base URL, used only for
-/// the "预览" hint under the API-address field.
+/// the preview hint under the API-address field.
 fn preview_path(kind: ProviderKind) -> &'static str {
     match kind {
         ProviderKind::OpenAI
@@ -219,21 +219,30 @@ pub(crate) enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn id(self) -> &'static str {
         match self {
-            SettingsSection::ModelManagement => "模型管理",
-            SettingsSection::Mcp => "MCP",
-            SettingsSection::Theme => "主题",
-            SettingsSection::General => "通用",
+            SettingsSection::ModelManagement => "models",
+            SettingsSection::Mcp => "mcp",
+            SettingsSection::Theme => "theme",
+            SettingsSection::General => "general",
         }
     }
 
-    pub(crate) fn sublabel(self) -> &'static str {
+    pub(crate) fn label(self) -> SharedString {
         match self {
-            SettingsSection::ModelManagement => "供应商、模型与接口配置",
-            SettingsSection::Mcp => "工具服务与 mcp.json",
-            SettingsSection::Theme => "界面外观与配色",
-            SettingsSection::General => "记忆、搜索与交互偏好",
+            SettingsSection::ModelManagement => crate::tr!("settings.sections.models"),
+            SettingsSection::Mcp => crate::tr!("settings.sections.mcp"),
+            SettingsSection::Theme => crate::tr!("settings.sections.theme"),
+            SettingsSection::General => crate::tr!("settings.sections.general"),
+        }
+    }
+
+    pub(crate) fn sublabel(self) -> SharedString {
+        match self {
+            SettingsSection::ModelManagement => crate::tr!("settings.sections.models_sub"),
+            SettingsSection::Mcp => crate::tr!("settings.sections.mcp_sub"),
+            SettingsSection::Theme => crate::tr!("settings.sections.theme_sub"),
+            SettingsSection::General => crate::tr!("settings.sections.general_sub"),
         }
     }
 
@@ -399,14 +408,17 @@ impl ProviderSettings {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let provider_search_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索模型平台..."));
+        let provider_search_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::tr!("provider.search_placeholder"))
+        });
         let key_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("输入 API 密钥")
+                .placeholder(crate::tr!("provider.api_key_placeholder"))
                 .masked(true)
         });
-        let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("输入 API 地址"));
+        let url_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::tr!("provider.api_url_placeholder"))
+        });
 
         // Auto-save: persist the edited credentials back to the selected
         // provider when either field loses focus (no explicit save button).
@@ -538,7 +550,7 @@ impl ProviderSettings {
                             .py_4()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(DialogTitle::new().child("删除供应商？")),
+                            .child(DialogTitle::new().child(crate::tr!("provider.delete_title"))),
                     )
                     .child(
                         v_flex()
@@ -549,7 +561,7 @@ impl ProviderSettings {
                                 div()
                                     .text_size(px(13.))
                                     .text_color(text_color())
-                                    .child("这会移除该供应商的 API 密钥、接口地址和模型选择。"),
+                                    .child(crate::tr!("provider.delete_body")),
                             )
                             .child(
                                 div()
@@ -567,7 +579,7 @@ impl ProviderSettings {
                             .border_color(cx.theme().border)
                             .child(
                                 Button::new("cancel-delete-provider")
-                                    .label("取消")
+                                    .label(crate::tr!("common.cancel"))
                                     .on_click(|_, window, cx| {
                                         window.close_dialog(cx);
                                     }),
@@ -575,7 +587,7 @@ impl ProviderSettings {
                             .child(
                                 Button::new("confirm-delete-provider")
                                     .primary()
-                                    .label("删除")
+                                    .label(crate::tr!("common.delete"))
                                     .on_click({
                                         let settings = settings.clone();
                                         move |_, window, cx| {
@@ -656,7 +668,7 @@ impl ProviderSettings {
                         }
                     }
                     Ok(Err(err)) => this.error = Some(err.into()),
-                    Err(_) => this.error = Some("模型获取已取消".into()),
+                    Err(_) => this.error = Some(crate::tr!("provider.fetch_cancelled")),
                 }
                 cx.notify();
             });
@@ -729,7 +741,11 @@ impl ProviderSettings {
             .items_center()
             .gap_1()
             .child(self.render_status_dot(enabled))
-            .child(if enabled { "启用" } else { "暂停" })
+            .child(if enabled {
+                crate::tr!("provider.enabled_badge")
+            } else {
+                crate::tr!("provider.paused_badge")
+            })
     }
 
     fn render_count_pill(&self, count: usize) -> impl IntoElement {
@@ -896,7 +912,7 @@ impl ProviderSettings {
                     .mt_2()
                     .text_size(px(12.5))
                     .text_color(text_2())
-                    .child("暂无匹配的平台。"),
+                    .child(crate::tr!("provider.no_matches")),
             );
         } else {
             for provider in filtered {
@@ -920,13 +936,13 @@ impl ProviderSettings {
                                     .text_size(px(14.))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(text_color())
-                                    .child("供应商"),
+                                    .child(crate::tr!("provider.title")),
                             )
                             .child(
                                 div()
                                     .text_size(px(11.5))
                                     .text_color(text_3())
-                                    .child("连接模型平台"),
+                                    .child(crate::tr!("provider.subtitle")),
                             ),
                     )
                     .child(self.render_count_pill(providers.len())),
@@ -938,7 +954,7 @@ impl ProviderSettings {
                     .primary()
                     .rounded(ButtonRounded::Large)
                     .icon(IconName::Plus)
-                    .label("添加供应商")
+                    .label(crate::tr!("provider.add"))
                     .on_click(cx.listener(|this, _, _, cx| this.add_provider(cx))),
             )
     }
@@ -1039,7 +1055,11 @@ impl ProviderSettings {
                     .flex()
                     .items_center()
                     .justify_end()
-                    .child(if selected { "可用" } else { "未启用" }),
+                    .child(if selected {
+                        crate::tr!("provider.model_enabled")
+                    } else {
+                        crate::tr!("provider.model_disabled")
+                    }),
             )
     }
 
@@ -1154,9 +1174,10 @@ impl ProviderSettings {
 
     fn render_field_label(
         &self,
-        label: &'static str,
-        hint: Option<&'static str>,
+        label: impl Into<SharedString>,
+        hint: Option<SharedString>,
     ) -> impl IntoElement {
+        let label = label.into();
         h_flex()
             .items_center()
             .gap_1p5()
@@ -1206,7 +1227,7 @@ impl ProviderSettings {
         let header_title = provider
             .as_ref()
             .map(|provider| provider.kind.label().to_string())
-            .unwrap_or_else(|| "新增供应商".to_string());
+            .unwrap_or_else(|| crate::tr!("provider.new_provider").to_string());
         let enabled = provider.as_ref().map(|provider| provider.enabled);
         let model_count = provider
             .as_ref()
@@ -1242,7 +1263,9 @@ impl ProviderSettings {
                     short_url(&provider.effective_base_url())
                 )
             })
-            .unwrap_or_else(|| format!("创建 {} 供应商", self.new_kind.label()));
+            .unwrap_or_else(|| {
+                crate::tr!("provider.create_provider", provider = self.new_kind.label()).to_string()
+            });
 
         // -- API address preview (live, from the input or the kind default).
         let raw_url = self.url_input.read(cx).value().trim().to_string();
@@ -1256,16 +1279,18 @@ impl ProviderSettings {
             base.push('/');
         }
         let preview_endpoint = format!("{base}{}", preview_path(self.new_kind));
-        let preview = format!("预览: {preview_endpoint}");
+        let preview = crate::tr!("provider.preview", endpoint = preview_endpoint.clone());
 
         // -- Model list.
         let mut models_list = v_flex().w_full().gap_1p5().pr_2();
         match provider.as_ref() {
             Some(provider) if self.fetching.contains(&provider.id) => {
-                models_list = models_list.child(self.render_hint("正在同步模型列表..."));
+                models_list =
+                    models_list.child(self.render_hint(crate::tr!("provider.syncing_models")));
             }
             Some(provider) if provider.models.is_empty() => {
-                models_list = models_list.child(self.render_hint("尚未同步到模型列表。"));
+                models_list =
+                    models_list.child(self.render_hint(crate::tr!("provider.no_models_synced")));
             }
             Some(provider) => {
                 for group in build_model_groups(&provider.models) {
@@ -1275,7 +1300,7 @@ impl ProviderSettings {
             }
             None => {
                 models_list =
-                    models_list.child(self.render_hint("选择或创建一个供应商后显示模型。"));
+                    models_list.child(self.render_hint(crate::tr!("provider.select_or_create")));
             }
         }
 
@@ -1294,9 +1319,9 @@ impl ProviderSettings {
                             IconName::Eye
                         })
                         .tooltip(if self.key_revealed {
-                            "隐藏密钥"
+                            crate::tr!("provider.hide_key")
                         } else {
-                            "显示密钥"
+                            crate::tr!("provider.show_key")
                         })
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.toggle_reveal_key(window, cx);
@@ -1308,10 +1333,14 @@ impl ProviderSettings {
                             .ghost()
                             .small()
                             .icon(IconName::LoaderCircle)
-                            .label(if is_fetching { "同步中" } else { "检测" })
+                            .label(if is_fetching {
+                                crate::tr!("provider.syncing")
+                            } else {
+                                crate::tr!("provider.test")
+                            })
                             .loading(is_fetching)
                             .disabled(is_fetching)
-                            .tooltip("使用当前配置同步模型")
+                            .tooltip(crate::tr!("provider.sync_current"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.fetch_models(provider_id, window, cx);
                             })),
@@ -1375,7 +1404,10 @@ impl ProviderSettings {
                                         .small()
                                         .rounded(ButtonRounded::Large)
                                         .icon(IconName::Plus)
-                                        .label(format!("创建 {}", self.new_kind.label()))
+                                        .label(crate::tr!(
+                                            "provider.create_provider_short",
+                                            provider = self.new_kind.label()
+                                        ))
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             this.add_provider(cx);
                                         })),
@@ -1387,7 +1419,7 @@ impl ProviderSettings {
                                         .ghost()
                                         .small()
                                         .icon(IconName::CircleX)
-                                        .tooltip("删除供应商")
+                                        .tooltip(crate::tr!("provider.delete_tooltip"))
                                         .on_click(cx.listener({
                                             let delete_provider_name = delete_provider_name.clone();
                                             move |this, _, window, cx| {
@@ -1408,9 +1440,9 @@ impl ProviderSettings {
                                         .checked(enabled)
                                         .color(clay())
                                         .tooltip(if enabled {
-                                            "暂停供应商"
+                                            crate::tr!("provider.pause_tooltip")
                                         } else {
-                                            "启用供应商"
+                                            crate::tr!("provider.enable_tooltip")
                                         })
                                         .on_click(move |checked, _, cx| {
                                             if let Some(app) = app.upgrade() {
@@ -1442,7 +1474,10 @@ impl ProviderSettings {
                                 h_flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(self.render_field_label("平台类型", None))
+                                    .child(self.render_field_label(
+                                        crate::tr!("provider.platform_type"),
+                                        None,
+                                    ))
                                     .child(self.render_badge(
                                         kind_caption(self.new_kind),
                                         clay_soft_bg(),
@@ -1458,17 +1493,22 @@ impl ProviderSettings {
                                 h_flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(self.render_field_label("API 密钥", None))
+                                    .child(
+                                        self.render_field_label(
+                                            crate::tr!("provider.api_key"),
+                                            None,
+                                        ),
+                                    )
                                     .when(key_empty, |this| {
                                         this.child(self.render_badge(
-                                            "未配置",
+                                            crate::tr!("provider.missing"),
                                             warning_bg(),
                                             warning_text(),
                                         ))
                                     })
                                     .when(key_dirty, |this| {
                                         this.child(self.render_badge(
-                                            "未保存",
+                                            crate::tr!("provider.unsaved"),
                                             warning_bg(),
                                             warning_text(),
                                         ))
@@ -1479,7 +1519,7 @@ impl ProviderSettings {
                                 div()
                                     .text_size(px(11.))
                                     .text_color(text_3())
-                                    .child("多个密钥使用逗号分隔"),
+                                    .child(crate::tr!("provider.multiple_keys")),
                             ),
                     )
                     .child(
@@ -1489,17 +1529,22 @@ impl ProviderSettings {
                                 h_flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(self.render_field_label("API 地址", None))
+                                    .child(
+                                        self.render_field_label(
+                                            crate::tr!("provider.api_url"),
+                                            None,
+                                        ),
+                                    )
                                     .when(using_default_url, |this| {
                                         this.child(self.render_badge(
-                                            "默认地址",
+                                            crate::tr!("provider.default_url"),
                                             muted_surface(),
                                             text_2(),
                                         ))
                                     })
                                     .when(url_dirty, |this| {
                                         this.child(self.render_badge(
-                                            "未保存",
+                                            crate::tr!("provider.unsaved"),
                                             warning_bg(),
                                             warning_text(),
                                         ))
@@ -1519,7 +1564,7 @@ impl ProviderSettings {
                                             .ghost()
                                             .xsmall()
                                             .icon(IconName::Copy)
-                                            .tooltip("复制完整预览地址")
+                                            .tooltip(crate::tr!("provider.copy_preview_url"))
                                             .on_click({
                                                 let preview_endpoint = preview_endpoint.clone();
                                                 move |_, window, cx| {
@@ -1529,7 +1574,9 @@ impl ProviderSettings {
                                                         ),
                                                     );
                                                     window.push_notification(
-                                                        Notification::info("API 地址已复制"),
+                                                        Notification::info(crate::tr!(
+                                                            "provider.api_url_copied"
+                                                        )),
                                                         cx,
                                                     );
                                                 }
@@ -1561,10 +1608,14 @@ impl ProviderSettings {
                                             .text_size(px(16.))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(text_color())
-                                            .child("模型"),
+                                            .child(crate::tr!("provider.models")),
                                     )
                                     .child(self.render_badge(
-                                        format!("{selected_model_count}/{model_count} 可用"),
+                                        crate::tr!(
+                                            "provider.models_available",
+                                            selected = selected_model_count,
+                                            total = model_count
+                                        ),
                                         muted_surface(),
                                         text_2(),
                                     )),
@@ -1582,7 +1633,7 @@ impl ProviderSettings {
                                                     .ghost()
                                                     .small()
                                                     .rounded(ButtonRounded::Large)
-                                                    .label("全部启用")
+                                                    .label(crate::tr!("provider.enable_all"))
                                                     .on_click(move |_, window, cx| {
                                                         if let Some(app) = app_enable.upgrade() {
                                                             app.update(cx, |app, cx| {
@@ -1593,9 +1644,9 @@ impl ProviderSettings {
                                                                 );
                                                             });
                                                             window.push_notification(
-                                                                Notification::info(
-                                                                    "已启用全部模型",
-                                                                ),
+                                                                Notification::info(crate::tr!(
+                                                                    "provider.all_enabled"
+                                                                )),
                                                                 cx,
                                                             );
                                                         }
@@ -1606,7 +1657,7 @@ impl ProviderSettings {
                                                     .ghost()
                                                     .small()
                                                     .rounded(ButtonRounded::Large)
-                                                    .label("全部停用")
+                                                    .label(crate::tr!("provider.disable_all"))
                                                     .on_click(move |_, window, cx| {
                                                         if let Some(app) = app_disable.upgrade() {
                                                             app.update(cx, |app, cx| {
@@ -1617,9 +1668,9 @@ impl ProviderSettings {
                                                                 );
                                                             });
                                                             window.push_notification(
-                                                                Notification::info(
-                                                                    "已停用全部模型",
-                                                                ),
+                                                                Notification::info(crate::tr!(
+                                                                    "provider.all_disabled"
+                                                                )),
                                                                 cx,
                                                             );
                                                         }
@@ -1633,9 +1684,9 @@ impl ProviderSettings {
                                                 .rounded(ButtonRounded::Large)
                                                 .icon(IconName::LoaderCircle)
                                                 .label(if is_fetching {
-                                                    "同步中"
+                                                    crate::tr!("provider.syncing")
                                                 } else {
-                                                    "同步模型"
+                                                    crate::tr!("provider.sync_models")
                                                 })
                                                 .loading(is_fetching)
                                                 .disabled(is_fetching)
@@ -1677,7 +1728,7 @@ impl ProviderSettings {
             })
     }
 
-    fn render_hint(&self, text: &'static str) -> impl IntoElement {
+    fn render_hint(&self, text: impl Into<SharedString>) -> impl IntoElement {
         div()
             .rounded(px(12.))
             .border_1()
@@ -1687,7 +1738,7 @@ impl ProviderSettings {
             .py_3()
             .text_size(px(12.))
             .text_color(text_2())
-            .child(text)
+            .child(text.into())
     }
 
     pub(crate) fn render_management(
@@ -1755,13 +1806,13 @@ impl ProviderSettings {
                     .text_size(px(28.))
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_color())
-                    .child("主题"),
+                    .child(crate::tr!("provider.theme_title")),
             )
             .child(
                 div()
                     .text_size(px(13.))
                     .text_color(text_3())
-                    .child("预留为主题与外观配置区。"),
+                    .child(crate::tr!("provider.theme_stub")),
             )
     }
 }

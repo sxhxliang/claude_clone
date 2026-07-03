@@ -56,7 +56,8 @@ impl SearchDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search conversations..."));
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(crate::tr!("search.placeholder")));
         let subscriptions =
             vec![
                 cx.subscribe_in(&input, window, |this, _, event: &InputEvent, window, cx| {
@@ -86,16 +87,9 @@ impl SearchDialog {
         }
     }
 
-    fn role_label(role: &ChatRole) -> &'static str {
-        match role {
-            ChatRole::User => "You",
-            ChatRole::Ai => "Claude",
-        }
-    }
-
     fn title_for(conversation: &Conversation) -> SharedString {
         if conversation.title.is_empty() {
-            "Untitled conversation".into()
+            crate::tr!("conversation.untitled")
         } else {
             conversation.title.clone()
         }
@@ -168,17 +162,20 @@ impl SearchDialog {
 
                 let (subtitle, snippet) = if let Some(message) = message_match {
                     (
-                        format!("{} message", Self::role_label(&message.role)).into(),
+                        match message.role {
+                            ChatRole::User => crate::tr!("search.user_message"),
+                            ChatRole::Ai => crate::tr!("search.ai_message"),
+                        },
                         Self::preview(&message.content),
                     )
                 } else {
                     (
-                        "Conversation title".into(),
+                        crate::tr!("search.conversation_title"),
                         conversation
                             .messages
                             .first()
                             .map(|message| Self::preview(&message.content))
-                            .unwrap_or_else(|| "No messages yet".into()),
+                            .unwrap_or_else(|| crate::tr!("search.no_messages")),
                     )
                 };
 
@@ -378,7 +375,7 @@ impl SearchDialog {
                                         .text_size(px(10.))
                                         .bg(accent())
                                         .text_color(bg_color())
-                                        .child("Current"),
+                                        .child(crate::tr!("common.current")),
                                 )
                             }),
                     )
@@ -428,7 +425,7 @@ impl Render for SearchDialog {
                             .items_center()
                             .justify_between()
                             .gap_3()
-                            .child(DialogTitle::new().child("Search conversations")),
+                            .child(DialogTitle::new().child(crate::tr!("search.title"))),
                     ),
             )
             .child(
@@ -463,11 +460,11 @@ impl Render for SearchDialog {
                             .text_size(px(11.5))
                             .text_color(text_3())
                             .child(if query_empty {
-                                "Recent conversations"
+                                crate::tr!("search.recent")
                             } else {
-                                "Search results"
+                                crate::tr!("search.results")
                             })
-                            .child(SharedString::from(format!("{} found", results.len()))),
+                            .child(crate::tr!("search.found", count = results.len())),
                     )
                     .child(
                         div()
@@ -492,7 +489,7 @@ impl Render for SearchDialog {
                                                 .child(
                                                     div()
                                                         .text_size(px(13.))
-                                                        .child("No matching conversations"),
+                                                        .child(crate::tr!("search.no_matches")),
                                                 ),
                                         )
                                     })

@@ -34,7 +34,11 @@ pub(crate) fn chat_title_menu_content(
             } else {
                 IconName::Star
             },
-            if pinned { "Unpin" } else { "Pin" },
+            if pinned {
+                crate::tr!("menu.unpin")
+            } else {
+                crate::tr!("menu.pin")
+            },
             move |window, cx| {
                 if let Some(v) = weak_pin.upgrade() {
                     v.update(cx, |this, cx| {
@@ -43,9 +47,9 @@ pub(crate) fn chat_title_menu_content(
                         this.save_state(cx);
                         window.push_notification(
                             Notification::info(if this.chat_pinned {
-                                "Pinned to top"
+                                crate::tr!("menu.pinned")
                             } else {
-                                "Unpinned"
+                                crate::tr!("menu.unpinned")
                             }),
                             cx,
                         );
@@ -58,7 +62,7 @@ pub(crate) fn chat_title_menu_content(
         .child(menu_item(
             "ct-rename",
             IconName::Replace,
-            "Rename",
+            crate::tr!("menu.rename"),
             move |window, cx| {
                 if let Some(v) = weak_rename.upgrade() {
                     v.update(cx, |this, cx| this.begin_rename(window, cx));
@@ -69,7 +73,7 @@ pub(crate) fn chat_title_menu_content(
         .child(menu_item(
             "ct-project",
             IconName::Folder,
-            "Add to project",
+            crate::tr!("project.add_to_project"),
             move |window, cx| {
                 if let Some(v) = weak_project.upgrade() {
                     v.update(cx, |this, cx| this.open_project_picker(window, cx));
@@ -81,7 +85,7 @@ pub(crate) fn chat_title_menu_content(
         .child(menu_item(
             "ct-delete",
             IconName::Delete,
-            "Delete",
+            crate::tr!("common.delete"),
             move |window, cx| {
                 if let Some(v) = weak_delete.upgrade() {
                     v.update(cx, |this, cx| this.delete_active_conversation(window, cx));
@@ -98,10 +102,25 @@ pub(crate) fn user_menu_content(
 ) -> Stateful<Div> {
     let weak_settings = weak.clone();
     let weak_update = weak.clone();
+    let weak_language = weak.clone();
     let update_label = weak
         .upgrade()
         .map(|app| app.read(cx).update_menu_label(cx))
-        .unwrap_or_else(|| "Check for updates".into());
+        .unwrap_or_else(|| crate::tr!("updates.check"));
+    let current_locale = weak
+        .upgrade()
+        .map(|app| app.read(cx).settings.locale.to_string())
+        .unwrap_or_else(|| crate::i18n::current_locale().to_string());
+    let next_locale = if crate::i18n::normalize_locale(&current_locale) == crate::i18n::ZH_CN_LOCALE
+    {
+        crate::i18n::EN_LOCALE
+    } else {
+        crate::i18n::ZH_CN_LOCALE
+    };
+    let language_label = crate::tr!(
+        "menu.switch_to_language",
+        language = crate::i18n::language_name(next_locale).to_string()
+    );
     v_flex()
         .id("user-menu-content")
         .w(px(240.))
@@ -119,7 +138,7 @@ pub(crate) fn user_menu_content(
         .child(menu_item(
             "um-settings",
             IconName::Settings,
-            "Settings",
+            crate::tr!("menu.settings"),
             move |window, cx| {
                 if let Some(v) = weak_settings.upgrade() {
                     v.update(cx, |this, cx| this.open_settings(window, cx));
@@ -141,18 +160,29 @@ pub(crate) fn user_menu_content(
         .child(menu_item(
             "um-lang",
             IconName::Globe,
-            "Language",
-            |window, cx| {
-                window.push_notification(Notification::info("Language settings opened"), cx);
+            language_label,
+            move |window, cx| {
+                if let Some(v) = weak_language.upgrade() {
+                    v.update(cx, |this, cx| {
+                        this.set_locale(next_locale, cx);
+                    });
+                    window.push_notification(
+                        Notification::info(crate::tr!(
+                            "menu.language_changed",
+                            language = crate::i18n::language_name(next_locale).to_string()
+                        )),
+                        cx,
+                    );
+                }
             },
             cx,
         ))
         .child(menu_item(
             "um-help",
             IconName::Info,
-            "Get help",
+            crate::tr!("menu.get_help"),
             |window, cx| {
-                window.push_notification(Notification::info("Help center opened"), cx);
+                window.push_notification(Notification::info(crate::tr!("menu.help_opened")), cx);
             },
             cx,
         ))
@@ -160,10 +190,10 @@ pub(crate) fn user_menu_content(
         .child(menu_item(
             "um-upgrade",
             IconName::Star,
-            "Upgrade plan",
+            crate::tr!("menu.upgrade_plan"),
             |window, cx| {
                 window.push_notification(
-                    Notification::info("Upgrade to Claude Pro for more features!"),
+                    Notification::info(crate::tr!("menu.upgrade_plan_hint")),
                     cx,
                 );
             },
@@ -172,9 +202,12 @@ pub(crate) fn user_menu_content(
         .child(menu_item(
             "um-apps",
             IconName::ArrowDown,
-            "Get apps and extensions",
+            crate::tr!("menu.apps"),
             |window, cx| {
-                window.push_notification(Notification::info("Opening app store…"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("menu.opening_app_store")),
+                    cx,
+                );
             },
             cx,
         ))
@@ -182,9 +215,9 @@ pub(crate) fn user_menu_content(
         .child(menu_item(
             "um-logout",
             IconName::Delete,
-            "Log out",
+            crate::tr!("menu.log_out"),
             |window, cx| {
-                window.push_notification(Notification::info("Logged out successfully"), cx);
+                window.push_notification(Notification::info(crate::tr!("menu.logged_out")), cx);
             },
             cx,
         ))
@@ -205,7 +238,7 @@ pub(crate) fn add_menu_content(
         .child(menu_item(
             "am-files",
             IconName::GalleryVerticalEnd,
-            "Add photo",
+            crate::tr!("menu.add_photo"),
             move |window, cx| {
                 if let Some(panel) = panel_image.upgrade() {
                     panel.update(cx, |this, cx| this.select_local_images(window, cx));
@@ -216,7 +249,7 @@ pub(crate) fn add_menu_content(
         .child(menu_item(
             "am-generate-image",
             IconName::Palette,
-            "Generate image",
+            crate::tr!("menu.generate_image"),
             move |window, cx| {
                 if let Some(panel) = panel_generate.upgrade() {
                     panel.update(cx, |this, cx| this.send_image_generation_sample(window, cx));
@@ -227,18 +260,21 @@ pub(crate) fn add_menu_content(
         .child(menu_item(
             "am-screen",
             IconName::Frame,
-            "Take a screenshot",
+            crate::tr!("menu.screenshot"),
             |window, cx| {
-                window.push_notification(Notification::info("Screenshot captured!"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("menu.screenshot_captured")),
+                    cx,
+                );
             },
             cx,
         ))
         .child(menu_item(
             "am-proj",
             IconName::Folder,
-            "Add to project",
+            crate::tr!("project.add_to_project"),
             |window, cx| {
-                window.push_notification(Notification::info("Pick a project"), cx);
+                window.push_notification(Notification::info(crate::tr!("menu.pick_project")), cx);
             },
             cx,
         ))
@@ -246,18 +282,21 @@ pub(crate) fn add_menu_content(
         .child(menu_item(
             "am-skills",
             IconName::SquareTerminal,
-            "Skills",
+            crate::tr!("menu.skills"),
             |window, cx| {
-                window.push_notification(Notification::info("Skills opened"), cx);
+                window.push_notification(Notification::info(crate::tr!("menu.skills_opened")), cx);
             },
             cx,
         ))
         .child(menu_item(
             "am-conn",
             IconName::Network,
-            "Add connectors",
+            crate::tr!("menu.connectors"),
             |window, cx| {
-                window.push_notification(Notification::info("Connectors panel opened"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("menu.connectors_opened")),
+                    cx,
+                );
             },
             cx,
         ))
@@ -265,9 +304,12 @@ pub(crate) fn add_menu_content(
         .child(menu_item(
             "am-web",
             IconName::Globe,
-            "Web search",
+            crate::tr!("menu.web_search"),
             |window, cx| {
-                window.push_notification(Notification::info("Web search toggled"), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("menu.web_search_toggled")),
+                    cx,
+                );
             },
             cx,
         ))
@@ -314,7 +356,7 @@ pub(crate) fn model_menu_content(
                 .py_2p5()
                 .text_size(px(12.5))
                 .text_color(text_3())
-                .child("No models — add a provider in Settings."),
+                .child(crate::tr!("menu.no_models")),
         );
     } else {
         let model_list_height =
@@ -345,12 +387,16 @@ pub(crate) fn model_menu_content(
                 .child(
                     v_flex()
                         .flex_1()
-                        .child(div().text_size(px(13.5)).child("Adaptive thinking"))
+                        .child(
+                            div()
+                                .text_size(px(13.5))
+                                .child(crate::tr!("menu.adaptive_thinking")),
+                        )
                         .child(
                             div()
                                 .text_size(px(12.))
                                 .text_color(text_3())
-                                .child("Thinks for more complex tasks"),
+                                .child(crate::tr!("menu.adaptive_thinking_hint")),
                         ),
                 )
                 .child(Switch::new("adapt-tog").checked(adaptive).on_click(
@@ -377,7 +423,7 @@ pub(crate) fn mcp_menu_content(
     let config_label: SharedString = config_path
         .as_ref()
         .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "Config directory unavailable".to_string())
+        .unwrap_or_else(|| crate::tr!("menu.mcp_config_unavailable").to_string())
         .into();
 
     let mut menu = v_flex()
@@ -420,9 +466,9 @@ pub(crate) fn mcp_menu_content(
     match servers {
         Ok(servers) if servers.is_empty() => {
             let status: SharedString = if configured {
-                "No MCP servers in mcp.json".into()
+                crate::tr!("menu.mcp_no_servers")
             } else {
-                "No mcp.json found".into()
+                crate::tr!("menu.mcp_not_found")
             };
             menu = menu.child(
                 div()
@@ -445,13 +491,17 @@ pub(crate) fn mcp_menu_content(
                         div()
                             .text_size(px(12.))
                             .text_color(text_3())
-                            .child("Servers"),
+                            .child(crate::tr!("menu.mcp_servers")),
                     )
                     .child(
                         div()
                             .text_size(px(12.))
                             .text_color(text_3())
-                            .child(format!("{enabled_count}/{} enabled", servers.len())),
+                            .child(crate::tr!(
+                                "menu.mcp_enabled_count",
+                                enabled = enabled_count,
+                                total = servers.len()
+                            )),
                     ),
             );
 
@@ -469,7 +519,7 @@ pub(crate) fn mcp_menu_content(
                         div()
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
-                            .child("Failed to read mcp.json"),
+                            .child(crate::tr!("menu.mcp_read_failed")),
                     )
                     .child(div().text_size(px(12.)).text_color(text_3()).child(err)),
             );
@@ -485,7 +535,10 @@ fn mcp_server_row(ix: usize, server: McpServerInfo, weak: WeakEntity<ClaudeApp>)
     let detail: SharedString = if server.config_enabled {
         server.command.clone().into()
     } else {
-        format!("Disabled in mcp.json - {}", server.command).into()
+        crate::tr!(
+            "menu.mcp_disabled_in_config",
+            command = server.command.clone()
+        )
     };
 
     h_flex()
@@ -577,7 +630,10 @@ fn provider_model_row(
                 v.update(cx, |this, cx| {
                     this.select_model(provider_id, model_id.clone(), cx);
                 });
-                window.push_notification(Notification::info(format!("Switched to {model_id}")), cx);
+                window.push_notification(
+                    Notification::info(crate::tr!("menu.switched_model", model = model_id)),
+                    cx,
+                );
             }
         }))
 }

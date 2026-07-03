@@ -244,7 +244,7 @@ fn render_branch_origin_timeline<T: ChatViewState>(
     cx: &mut Context<T>,
 ) -> impl IntoElement {
     let title = if origin.source_title.as_ref().trim().is_empty() {
-        "Untitled conversation".into()
+        crate::tr!("conversation.untitled")
     } else {
         origin.source_title.clone()
     };
@@ -266,7 +266,7 @@ fn render_branch_origin_timeline<T: ChatViewState>(
                 .items_center()
                 .gap_1()
                 .min_w_0()
-                .child("从")
+                .child(crate::tr!("chat_view.branch_from"))
                 .child(
                     div()
                         .id(format!(
@@ -279,15 +279,14 @@ fn render_branch_origin_timeline<T: ChatViewState>(
                         .text_color(accent())
                         .hover(|this| this.text_color(text_color()))
                         .tooltip(|window, cx| {
-                            Tooltip::new("Open source conversation").build(window, cx)
+                            Tooltip::new(crate::tr!("chat_view.open_source")).build(window, cx)
                         })
                         .child(title)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.open_branch_origin(origin_for_click.clone(), window, cx);
                         })),
-                )
-                .child("建立的分支"),
+                ),
         )
         .child(div().h(px(1.)).flex_1().bg(timeline_line()))
 }
@@ -361,7 +360,11 @@ fn render_user_message<T: ChatViewState>(
                             .text_color(text_3())
                             .cursor_pointer()
                             .hover(|h| h.text_color(text_color()))
-                            .child(if expanded { "Show less" } else { "Show more" })
+                            .child(if expanded {
+                                crate::tr!("chat_view.show_less")
+                            } else {
+                                crate::tr!("chat_view.show_more")
+                            })
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.toggle_cowork_user_expanded(ix, cx);
                             })),
@@ -410,11 +413,16 @@ fn render_ai_message<T: ChatViewState>(
         .items_center()
         .mb_2()
         .child(div().text_color(accent()).text_size(px(17.)).child("✳"))
-        .child(div().text_size(px(12.)).text_color(text_3()).child(format!(
-            "Claude · {} · {}",
-            mode.label(),
-            model
-        )));
+        .child(
+            div()
+                .text_size(px(12.))
+                .text_color(text_3())
+                .child(crate::tr!(
+                    "chat_view.message_header",
+                    mode = crate::i18n::chat_mode_label(mode).to_string(),
+                    model = model.to_string()
+                )),
+        );
 
     let body = if let Some(blocks) = &msg.blocks {
         render_blocks(ix, blocks, tool_expanded, highlighted_artifact, cx)
@@ -467,28 +475,28 @@ fn render_ai_actions<T: ChatViewState>(
         .child(ai_message_action(
             format!("copy-ai-message-{ix}"),
             IconName::Copy,
-            "Copy",
+            crate::tr!("chat_view.copy"),
             move |this, window, cx| this.copy_ai_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("branch-ai-message-{ix}"),
             IconName::Network,
-            "Branch",
+            crate::tr!("chat_view.branch"),
             move |this, window, cx| this.branch_conversation_from_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("delete-ai-message-{ix}"),
             IconName::Delete,
-            "Delete",
+            crate::tr!("chat_view.delete"),
             move |this, window, cx| this.delete_ai_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("regenerate-ai-message-{ix}"),
             IconName::Redo2,
-            "Regenerate",
+            crate::tr!("chat_view.regenerate"),
             move |this, window, cx| this.regenerate_ai_message(ix, window, cx),
             cx,
         ))
@@ -511,35 +519,35 @@ fn render_user_actions<T: ChatViewState>(
         .child(ai_message_action(
             format!("copy-user-message-{ix}"),
             IconName::Copy,
-            "Copy",
+            crate::tr!("chat_view.copy"),
             move |this, window, cx| this.copy_user_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("branch-user-message-{ix}"),
             IconName::Network,
-            "Branch",
+            crate::tr!("chat_view.branch"),
             move |this, window, cx| this.branch_conversation_from_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("delete-user-message-{ix}"),
             IconName::Delete,
-            "Delete",
+            crate::tr!("chat_view.delete"),
             move |this, window, cx| this.delete_user_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("edit-user-message-{ix}"),
             IconName::Replace,
-            "Edit",
+            crate::tr!("chat_view.edit"),
             move |this, window, cx| this.edit_user_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(
             format!("regenerate-from-user-message-{ix}"),
             IconName::Redo2,
-            "Regenerate",
+            crate::tr!("chat_view.regenerate"),
             move |this, window, cx| this.regenerate_from_user_message(ix, window, cx),
             cx,
         ))
@@ -548,7 +556,7 @@ fn render_user_actions<T: ChatViewState>(
 fn ai_message_action<T: ChatViewState>(
     id: String,
     icon: IconName,
-    tooltip: &'static str,
+    tooltip: SharedString,
     on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
     cx: &mut Context<T>,
 ) -> impl IntoElement {
@@ -562,7 +570,7 @@ fn ai_message_action<T: ChatViewState>(
         .cursor_pointer()
         .text_color(text_2())
         .hover(|this| this.bg(hover_bg()).text_color(text_color()))
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
         .child(Icon::new(icon).size_3p5())
         .on_click(cx.listener(move |this, _, window, cx| {
             cx.stop_propagation();
@@ -616,14 +624,14 @@ fn render_thinking_block<T: ChatViewState>(
 ) -> impl IntoElement {
     let expanded = thinking.expanded || !thinking.done;
     let title = if thinking.done {
-        "Thoughts"
+        crate::tr!("chat_view.thoughts")
     } else {
-        "Thinking"
+        crate::tr!("chat_view.thinking")
     };
     let chevron_rotation: f32 = if expanded { 0.0 } else { 0.75 };
     let header_id: SharedString = format!("thinking-hdr-{}-{}", msg_ix, block_ix).into();
     let viewer_state = thinking.state.clone();
-    let viewer_title: SharedString = title.into();
+    let viewer_title = title.clone();
 
     v_flex()
         .id(format!("thinking-block-{msg_ix}-{block_ix}"))
@@ -679,7 +687,9 @@ fn render_thinking_block<T: ChatViewState>(
                         .justify_center()
                         .text_color(text_3())
                         .hover(|this| this.bg(hover_bg()).text_color(text_color()))
-                        .tooltip(|window, cx| Tooltip::new("Open thoughts").build(window, cx))
+                        .tooltip(|window, cx| {
+                            Tooltip::new(crate::tr!("chat_view.open_thoughts")).build(window, cx)
+                        })
                         .child(Icon::new(IconName::Maximize).size_3p5())
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
@@ -744,17 +754,16 @@ fn attachment_size_label(attachment: &ImageAttachment) -> Option<SharedString> {
 
 fn document_parse_label(attachment: &ImageAttachment) -> SharedString {
     if attachment.detail.as_ref().contains("Parsing") {
-        "Parsing".into()
-    } else if attachment.parsed_text.is_some() {
-        attachment_detail_parts(&attachment.detail)
-            .into_iter()
-            .find(|part| part.starts_with("Parsed "))
-            .unwrap_or_else(|| "Parsed".to_string())
-            .into()
+        crate::tr!("chat_view.parsing")
+    } else if let Some(parsed_text) = &attachment.parsed_text {
+        crate::tr!(
+            "chat_view.parsed_chars",
+            count = parsed_text.chars().count()
+        )
     } else if attachment.parse_error.is_some() {
-        "Parse failed".into()
+        crate::tr!("chat_view.parse_failed")
     } else {
-        "Ready".into()
+        crate::tr!("chat_view.ready")
     }
 }
 
@@ -857,12 +866,12 @@ fn render_generated_image<T: ChatViewState>(
                             .child(image_action(
                                 format!("copy-generated-prompt-{msg_ix}-{block_ix}"),
                                 IconName::Copy,
-                                "Copy prompt",
+                                crate::tr!("chat_view.copy_prompt"),
                                 move |_, window, cx| {
                                     window.push_notification(
-                                        Notification::info(format!(
-                                            "Prompt copied: {}",
-                                            copy_label
+                                        Notification::info(crate::tr!(
+                                            "chat_view.prompt_copied",
+                                            prompt = copy_label.to_string()
                                         )),
                                         cx,
                                     );
@@ -872,7 +881,7 @@ fn render_generated_image<T: ChatViewState>(
                             .child(image_action(
                                 format!("open-generated-image-{msg_ix}-{block_ix}"),
                                 IconName::ExternalLink,
-                                "Open image",
+                                crate::tr!("chat_view.open_image"),
                                 move |this, window, cx| {
                                     this.open_image_viewer(preview_for_action.clone(), window, cx);
                                 },
@@ -917,7 +926,10 @@ fn render_attachment_thumbnail<T: ChatViewState>(
                     .child(render_document_attachment_preview(attachment))
                     .when_some(local_path.clone(), |this, path| {
                         this.cursor_pointer()
-                            .tooltip(|window, cx| Tooltip::new("Show in folder").build(window, cx))
+                            .tooltip(|window, cx| {
+                                Tooltip::new(crate::tr!("chat_view.show_in_folder"))
+                                    .build(window, cx)
+                            })
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.reveal_file(path.clone(), window, cx);
                             }))
@@ -976,17 +988,21 @@ fn render_attachment_thumbnail<T: ChatViewState>(
                 .bg(file_chip_bg())
                 .child(render_attachment_image(attachment))
                 .cursor_pointer()
-                .tooltip(|window, cx| Tooltip::new("Show in folder").build(window, cx))
+                .tooltip(|window, cx| {
+                    Tooltip::new(crate::tr!("chat_view.show_in_folder")).build(window, cx)
+                })
                 .when_some(local_path.clone(), |this, path| {
                     this.on_click(cx.listener(move |this, _, window, cx| {
                         this.reveal_file(path.clone(), window, cx);
                     }))
                 })
                 .when(local_path.is_none(), |this| {
-                    this.tooltip(|window, cx| Tooltip::new("Open image").build(window, cx))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_image_viewer(preview.clone(), window, cx);
-                        }))
+                    this.tooltip(|window, cx| {
+                        Tooltip::new(crate::tr!("chat_view.open_image")).build(window, cx)
+                    })
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_image_viewer(preview.clone(), window, cx);
+                    }))
                 }),
         )
         .child(
@@ -1016,7 +1032,7 @@ fn render_attachment_thumbnail<T: ChatViewState>(
 fn image_action<T: ChatViewState>(
     id: String,
     icon: IconName,
-    tooltip: &'static str,
+    tooltip: SharedString,
     on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
     cx: &mut Context<T>,
 ) -> impl IntoElement {
@@ -1030,7 +1046,7 @@ fn image_action<T: ChatViewState>(
         .cursor_pointer()
         .text_color(text_2())
         .hover(|this| this.bg(hover_bg()).text_color(text_color()))
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
         .child(Icon::new(icon).size_3p5())
         .on_click(cx.listener(move |this, _, window, cx| on_click(this, window, cx)))
 }
@@ -1451,7 +1467,10 @@ fn render_tool_step<T: ChatViewState>(
                             .child(div().truncate().flex_1().child(chip))
                             .on_click(cx.listener(move |_, _, window, cx| {
                                 window.push_notification(
-                                    Notification::info(format!("Opened: {}", chip_label)),
+                                    Notification::info(crate::tr!(
+                                        "chat_view.opened",
+                                        name = chip_label.to_string()
+                                    )),
                                     cx,
                                 );
                             })),
@@ -1474,7 +1493,10 @@ fn render_thinking(mode: ChatMode) -> Div {
                         div()
                             .text_size(px(12.))
                             .text_color(text_3())
-                            .child(format!("Claude · {} · thinking…", mode.label())),
+                            .child(crate::tr!(
+                                "chat_view.thinking_header",
+                                mode = crate::i18n::chat_mode_label(mode).to_string()
+                            )),
                     ),
             )
             .child(

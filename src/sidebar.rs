@@ -75,11 +75,12 @@ impl Sidebar {
     fn nav_item(
         id: &'static str,
         icon: IconName,
-        label: &'static str,
+        label: impl Into<SharedString>,
         style: NavItemStyle,
         on_click: impl Fn(&mut Sidebar, &gpui::ClickEvent, &mut Window, &mut Context<Sidebar>) + 'static,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let label = label.into();
         h_flex()
             .id(id)
             .items_center()
@@ -118,7 +119,7 @@ impl Sidebar {
 
     fn conversation_title(conversation: &Conversation) -> SharedString {
         if conversation.title.is_empty() {
-            SharedString::from("Untitled conversation")
+            crate::tr!("conversation.untitled")
         } else {
             conversation.title.clone()
         }
@@ -257,7 +258,7 @@ impl Sidebar {
                 .items_center()
                 .justify_center()
                 .child(Icon::new(mode.icon()).size_3p5())
-                .child(mode.label())
+                .child(crate::i18n::chat_mode_label(mode))
                 .into_any_element()
         }
 
@@ -272,7 +273,14 @@ impl Sidebar {
                         app.update(cx, |app, cx| {
                             if app.settings.mode != new_mode {
                                 app.settings.mode = new_mode;
-                                ClaudeApp::toast(window, cx, format!("Mode: {}", new_mode.label()));
+                                ClaudeApp::toast(
+                                    window,
+                                    cx,
+                                    crate::tr!(
+                                        "nav.mode_changed",
+                                        mode = crate::i18n::chat_mode_label(new_mode).to_string()
+                                    ),
+                                );
                                 cx.notify();
                             }
                         });
@@ -292,7 +300,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-new",
                 IconName::Plus,
-                "New chat",
+                crate::tr!("nav.new_chat"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -308,7 +316,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-search",
                 IconName::Search,
-                "Search",
+                crate::tr!("nav.search"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -324,7 +332,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-chats",
                 IconName::Inbox,
-                "Chats",
+                crate::tr!("nav.chats"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -340,7 +348,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-projects",
                 IconName::Folder,
-                "Projects",
+                crate::tr!("nav.projects"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -358,7 +366,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-artifacts",
                 IconName::File,
-                "Artifacts",
+                crate::tr!("nav.artifacts"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -376,7 +384,7 @@ impl Sidebar {
             .child(Self::nav_item(
                 "nav-customize",
                 IconName::Settings,
-                "Customize",
+                crate::tr!("nav.customize"),
                 NavItemStyle {
                     badge: None,
                     muted: false,
@@ -404,7 +412,7 @@ impl Sidebar {
                     .text_size(px(11.))
                     .text_color(text_3())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("RECENTS"),
+                    .child(crate::tr!("nav.recents")),
             )
             .child(
                 h_flex()
@@ -415,7 +423,7 @@ impl Sidebar {
                             .small()
                             .selected(self.list_mode == ConversationListMode::Recent)
                             .icon(IconName::Inbox)
-                            .tooltip("Recent order")
+                            .tooltip(crate::tr!("nav.recent_order"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.list_mode = ConversationListMode::Recent;
                                 cx.notify();
@@ -427,7 +435,7 @@ impl Sidebar {
                             .small()
                             .selected(self.list_mode == ConversationListMode::Tree)
                             .icon(IconName::Network)
-                            .tooltip("Tree order")
+                            .tooltip(crate::tr!("nav.tree_order"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.list_mode = ConversationListMode::Tree;
                                 cx.notify();
@@ -455,7 +463,7 @@ impl Sidebar {
             .child(menu_item(
                 "recent-open",
                 IconName::Inbox,
-                "Open",
+                crate::tr!("menu.open"),
                 move |window, cx| {
                     if let Some(app) = weak_open.upgrade() {
                         app.update(cx, |app, cx| app.select_conversation(id, window, cx));
@@ -466,7 +474,7 @@ impl Sidebar {
             .child(menu_item(
                 "recent-rename",
                 IconName::Replace,
-                "Rename",
+                crate::tr!("menu.rename"),
                 move |window, cx| {
                     if let Some(app) = weak_rename.upgrade() {
                         app.update(cx, |app, cx| app.begin_rename_conversation(id, window, cx));
@@ -481,7 +489,11 @@ impl Sidebar {
                 } else {
                     IconName::Star
                 },
-                if row.pinned { "Unpin" } else { "Pin" },
+                if row.pinned {
+                    crate::tr!("menu.unpin")
+                } else {
+                    crate::tr!("menu.pin")
+                },
                 move |window, cx| {
                     if let Some(app) = weak_pin.upgrade() {
                         app.update(cx, |app, cx| {
@@ -494,7 +506,7 @@ impl Sidebar {
             .child(menu_item(
                 "recent-project",
                 IconName::Folder,
-                "Add to project",
+                crate::tr!("project.add_to_project"),
                 move |window, cx| {
                     if let Some(app) = weak_project.upgrade() {
                         app.update(cx, |app, cx| {
@@ -508,7 +520,7 @@ impl Sidebar {
             .child(menu_item(
                 "recent-delete",
                 IconName::Delete,
-                "Delete",
+                crate::tr!("common.delete"),
                 move |window, cx| {
                     if let Some(app) = weak_delete.upgrade() {
                         app.update(cx, |app, cx| app.delete_conversation(id, window, cx));
@@ -608,7 +620,7 @@ impl Sidebar {
                                         .ghost()
                                         .xsmall()
                                         .icon(IconName::Ellipsis)
-                                        .tooltip("Conversation actions"),
+                                        .tooltip(crate::tr!("nav.conversation_actions")),
                                 )
                                 .content(move |_, _, cx| {
                                     Self::conversation_menu_content(
@@ -676,7 +688,7 @@ impl Sidebar {
                                 div()
                                     .text_size(px(11.5))
                                     .text_color(text_3())
-                                    .child("Free plan"),
+                                    .child(crate::tr!("nav.free_plan")),
                             ),
                     )
                     .child(
@@ -687,9 +699,13 @@ impl Sidebar {
                                     .ghost()
                                     .small()
                                     .icon(IconName::ArrowDown)
-                                    .tooltip("Downloads")
+                                    .tooltip(crate::tr!("nav.downloads"))
                                     .on_click(|_, window, cx| {
-                                        ClaudeApp::toast(window, cx, "Downloads panel coming soon");
+                                        ClaudeApp::toast(
+                                            window,
+                                            cx,
+                                            crate::tr!("nav.downloads_soon"),
+                                        );
                                     }),
                             )
                             .child(
@@ -764,7 +780,7 @@ impl Render for Sidebar {
                             .ghost()
                             .small()
                             .icon(IconName::PanelLeft)
-                            .tooltip("Collapse sidebar")
+                            .tooltip(crate::tr!("nav.collapse_sidebar"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 if let Some(app) = this.app.upgrade() {
                                     app.update(cx, |app, cx| {

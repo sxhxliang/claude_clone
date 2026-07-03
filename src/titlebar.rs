@@ -100,7 +100,7 @@ impl Render for TopBar {
             Some(app) => {
                 let app = app.read(cx);
                 let title = if app.chat_title.is_empty() {
-                    SharedString::from("Untitled")
+                    crate::tr!("conversation.untitled_short")
                 } else {
                     app.chat_title.clone()
                 };
@@ -111,7 +111,12 @@ impl Render for TopBar {
                     app.chat_pinned,
                 )
             }
-            None => (false, false, SharedString::from("Untitled"), false),
+            None => (
+                false,
+                false,
+                crate::tr!("conversation.untitled_short"),
+                false,
+            ),
         };
 
         TitleBar::new().child(
@@ -132,7 +137,7 @@ impl Render for TopBar {
                                         .ghost()
                                         .small()
                                         .icon(IconName::PanelLeft)
-                                        .tooltip("Toggle sidebar")
+                                        .tooltip(crate::tr!("nav.toggle_sidebar"))
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             if let Some(app) = this.app.upgrade() {
                                                 app.update(cx, |app, cx| {
@@ -173,16 +178,20 @@ impl Render for TopBar {
                                 .text_size(px(12.5))
                                 .text_color(text_2())
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child("Free plan")
+                                .child(crate::tr!("nav.free_plan"))
                                 .child(div().text_color(text_3()).child("·"))
                                 .child(
                                     div()
                                         .id("upgrade-link")
                                         .text_color(text_color())
                                         .cursor_pointer()
-                                        .child("Upgrade")
+                                        .child(crate::tr!("nav.upgrade"))
                                         .on_click(|_, window, cx| {
-                                            ClaudeApp::toast(window, cx, "Upgrade to Claude Pro!");
+                                            ClaudeApp::toast(
+                                                window,
+                                                cx,
+                                                crate::tr!("nav.upgrade_to_pro"),
+                                            );
                                         }),
                                 ),
                         )
