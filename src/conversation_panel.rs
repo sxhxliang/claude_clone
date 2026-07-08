@@ -40,6 +40,7 @@ use crate::theme::{
     accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
     text_color, white_color,
 };
+use crate::voice_input::VoiceRecorder;
 use crate::{ClaudeApp, ConversationTabCloseScope};
 
 pub(crate) const PANEL_NAME: &str = "ClaudeConversationPanel";
@@ -49,6 +50,14 @@ struct StreamingTokenCounter {
     started_at: Option<Instant>,
     output: String,
     provider_output_tokens: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum VoiceInputState {
+    #[default]
+    Idle,
+    Recording,
+    Transcribing,
 }
 
 impl StreamingTokenCounter {
@@ -124,6 +133,9 @@ pub(crate) struct ConversationPanel {
     pending: bool,
     generation_task: Option<Task<()>>,
     generation_cancel: Option<GenerationCancel>,
+    voice_state: VoiceInputState,
+    voice_recorder: Option<VoiceRecorder>,
+    voice_task: Option<Task<()>>,
     project_id: Option<usize>,
     branch_origin: Option<BranchOrigin>,
     mode: ChatMode,
@@ -191,6 +203,9 @@ impl ConversationPanel {
             pending: conversation.pending,
             generation_task: None,
             generation_cancel: None,
+            voice_state: VoiceInputState::Idle,
+            voice_recorder: None,
+            voice_task: None,
             project_id: conversation.project_id,
             branch_origin: conversation.branch_origin,
             mode,
@@ -936,6 +951,115 @@ impl ConversationPanel {
             Notification::info(crate::tr!("conversation.response_stopped")),
             cx,
         );
+    }
+
+    fn handle_voice_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.voice_state {
+            VoiceInputState::Idle => self.start_voice_recording(window, cx),
+            VoiceInputState::Recording => self.stop_voice_recording(window, cx),
+            VoiceInputState::Transcribing => {
+                window
+                    .push_notification(Notification::info(crate::tr!("chat.voice_processing")), cx);
+            }
+        }
+    }
+
+    fn start_voice_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending {
+            window.push_notification(
+                Notification::info(crate::tr!("conversation.wait_response")),
+                cx,
+            );
+            return;
+        }
+        if self.voice_task.is_some() {
+            window.push_notification(Notification::info(crate::tr!("chat.voice_processing")), cx);
+            return;
+        }
+
+        match VoiceRecorder::start() {
+            Ok(recorder) => {
+                self.voice_recorder = Some(recorder);
+                self.voice_state = VoiceInputState::Recording;
+                window
+                    .push_notification(Notification::info(crate::tr!("chat.voice_recording")), cx);
+                cx.notify();
+            }
+            Err(err) => {
+                window.push_notification(Notification::error(err), cx);
+            }
+        }
+    }
+
+    fn stop_voice_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(recorder) = self.voice_recorder.take() else {
+            self.voice_state = VoiceInputState::Idle;
+            cx.notify();
+            return;
+        };
+
+        self.voice_state = VoiceInputState::Transcribing;
+        window.push_notification(Notification::info(crate::tr!("chat.voice_processing")), cx);
+        cx.notify();
+
+        self.voice_task = Some(cx.spawn_in(window, async move |panel, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { recorder.stop_and_transcribe() })
+                .await;
+
+            _ = panel.update_in(cx, |this, window, cx| {
+                this.voice_task = None;
+                this.voice_state = VoiceInputState::Idle;
+                match result {
+                    Ok(transcript) => {
+                        this.insert_voice_transcript(transcript, window, cx);
+                    }
+                    Err(err) => {
+                        window.push_notification(Notification::error(err), cx);
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn insert_voice_transcript(
+        &mut self,
+        transcript: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let transcript = transcript.trim();
+        if transcript.is_empty() {
+            window.push_notification(Notification::error(crate::tr!("chat.voice_no_speech")), cx);
+            return;
+        }
+
+        let current = self.input.read(cx).value().to_string();
+        let value = if current.trim().is_empty() {
+            transcript.to_string()
+        } else if current.chars().last().is_some_and(char::is_whitespace) {
+            format!("{current}{transcript}")
+        } else {
+            format!("{current} {transcript}")
+        };
+        self.input.update(cx, |state, cx| {
+            state.set_value(value, window, cx);
+            state.focus(window, cx);
+        });
+        window.push_notification(
+            Notification::success(crate::tr!("chat.voice_transcribed")),
+            cx,
+        );
+    }
+
+    fn voice_input_tooltip(&self) -> SharedString {
+        match self.voice_state {
+            VoiceInputState::Idle => crate::tr!("chat.voice_input"),
+            VoiceInputState::Recording => crate::tr!("chat.voice_stop_recording"),
+            VoiceInputState::Transcribing => crate::tr!("chat.voice_processing"),
+        }
     }
 
     fn start_reply_for_user(
@@ -1757,10 +1881,14 @@ impl ConversationPanel {
         };
         let has_composer_content =
             !self.input.read(cx).value().trim().is_empty() || !self.pending_images.is_empty();
-        let can_send = has_composer_content && !self.pending;
+        let can_send =
+            has_composer_content && !self.pending && self.voice_state == VoiceInputState::Idle;
         let app = self.app.clone();
         let id = self.id;
         let panel = cx.entity().downgrade();
+        let voice_recording = self.voice_state == VoiceInputState::Recording;
+        let voice_transcribing = self.voice_state == VoiceInputState::Transcribing;
+        let voice_tooltip = self.voice_input_tooltip();
         let mcp_trigger = if mcp_active {
             Button::new(format!("panel-mcp-btn-{id}"))
                 .small()
@@ -1913,14 +2041,17 @@ impl ConversationPanel {
                                 Button::new(format!("panel-mic-btn-{id}"))
                                     .ghost()
                                     .small()
-                                    .icon(IconName::Bot)
-                                    .tooltip(crate::tr!("chat.voice_input"))
-                                    .on_click(|_, window, cx| {
-                                        window.push_notification(
-                                            Notification::info(crate::tr!("chat.listening_demo")),
-                                            cx,
-                                        );
-                                    }),
+                                    .disabled(voice_transcribing)
+                                    .tooltip(voice_tooltip.clone())
+                                    .child(if voice_recording {
+                                        Self::render_voice_wave_glyph(accent()).into_any_element()
+                                    } else {
+                                        Self::render_mic_glyph(text_color()).into_any_element()
+                                    })
+                                    .when(voice_recording, |this| this.outline())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.handle_voice_input(window, cx);
+                                    })),
                             )
                             .child(if self.pending {
                                 Button::new(format!("panel-stop-btn-{id}"))
@@ -2044,10 +2175,14 @@ impl ConversationPanel {
         let show_effort = !current_model.is_empty();
         let has_composer_content =
             !self.input.read(cx).value().trim().is_empty() || !self.pending_images.is_empty();
-        let can_send = has_composer_content && !self.pending;
+        let can_send =
+            has_composer_content && !self.pending && self.voice_state == VoiceInputState::Idle;
         let app = self.app.clone();
         let id = self.id;
         let panel = cx.entity().downgrade();
+        let voice_recording = self.voice_state == VoiceInputState::Recording;
+        let voice_transcribing = self.voice_state == VoiceInputState::Transcribing;
+        let voice_tooltip = self.voice_input_tooltip();
 
         v_flex()
             .w_full()
@@ -2149,14 +2284,17 @@ impl ConversationPanel {
                                     .small()
                                     .compact()
                                     .rounded(px(8.))
-                                    .tooltip(crate::tr!("chat.voice_input"))
-                                    .child(Self::render_mic_glyph(text_color()))
-                                    .on_click(|_, window, cx| {
-                                        window.push_notification(
-                                            Notification::info(crate::tr!("chat.listening_demo")),
-                                            cx,
-                                        );
-                                    }),
+                                    .disabled(voice_transcribing)
+                                    .tooltip(voice_tooltip.clone())
+                                    .child(if voice_recording {
+                                        Self::render_voice_wave_glyph(accent()).into_any_element()
+                                    } else {
+                                        Self::render_mic_glyph(text_color()).into_any_element()
+                                    })
+                                    .when(voice_recording, |this| this.outline())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.handle_voice_input(window, cx);
+                                    })),
                             )
                             .child(if can_send {
                                 Button::new(format!("home-send-btn-{id}"))
@@ -2176,14 +2314,18 @@ impl ConversationPanel {
                                     .small()
                                     .compact()
                                     .rounded(px(8.))
-                                    .tooltip(crate::tr!("chat.voice_input"))
-                                    .child(Self::render_voice_wave_glyph(text_color()))
-                                    .on_click(|_, window, cx| {
-                                        window.push_notification(
-                                            Notification::info(crate::tr!("chat.listening_demo")),
-                                            cx,
-                                        );
+                                    .disabled(voice_transcribing)
+                                    .tooltip(voice_tooltip.clone())
+                                    .child(if voice_recording {
+                                        Self::render_voice_wave_glyph(accent()).into_any_element()
+                                    } else {
+                                        Self::render_voice_wave_glyph(text_color())
+                                            .into_any_element()
                                     })
+                                    .when(voice_recording, |this| this.outline())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.handle_voice_input(window, cx);
+                                    }))
                             }),
                     ),
             )

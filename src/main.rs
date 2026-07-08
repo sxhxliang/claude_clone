@@ -53,6 +53,7 @@ mod store;
 mod system_file;
 mod theme;
 mod titlebar;
+mod voice_input;
 use app_updater::{UpdateStatus, Updater};
 use chat_view::ArtifactHighlightTarget;
 use conversation_panel::ConversationPanel;
