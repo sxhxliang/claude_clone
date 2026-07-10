@@ -40,7 +40,7 @@ use crate::theme::{
     accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
     text_color, white_color,
 };
-use crate::voice_input::VoiceRecorder;
+use crate::voice_input::{VoiceEvent, VoiceRecorder};
 use crate::{ClaudeApp, ConversationTabCloseScope};
 
 pub(crate) const PANEL_NAME: &str = "ClaudeConversationPanel";
@@ -56,6 +56,7 @@ struct StreamingTokenCounter {
 enum VoiceInputState {
     #[default]
     Idle,
+    Starting,
     Recording,
     Transcribing,
 }
@@ -136,6 +137,8 @@ pub(crate) struct ConversationPanel {
     voice_state: VoiceInputState,
     voice_recorder: Option<VoiceRecorder>,
     voice_task: Option<Task<()>>,
+    voice_base_input: String,
+    voice_committed_text: String,
     project_id: Option<usize>,
     branch_origin: Option<BranchOrigin>,
     mode: ChatMode,
@@ -206,6 +209,8 @@ impl ConversationPanel {
             voice_state: VoiceInputState::Idle,
             voice_recorder: None,
             voice_task: None,
+            voice_base_input: String::new(),
+            voice_committed_text: String::new(),
             project_id: conversation.project_id,
             branch_origin: conversation.branch_origin,
             mode,
@@ -956,6 +961,9 @@ impl ConversationPanel {
     fn handle_voice_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.voice_state {
             VoiceInputState::Idle => self.start_voice_recording(window, cx),
+            VoiceInputState::Starting => {
+                window.push_notification(Notification::info(crate::tr!("chat.voice_starting")), cx);
+            }
             VoiceInputState::Recording => self.stop_voice_recording(window, cx),
             VoiceInputState::Transcribing => {
                 window
@@ -977,12 +985,42 @@ impl ConversationPanel {
             return;
         }
 
-        match VoiceRecorder::start() {
-            Ok(recorder) => {
+        let configured_device = self.app.upgrade().and_then(|app| {
+            let device = app.read(cx).settings.audio_input_device.to_string();
+            (!device.trim().is_empty()).then_some(device)
+        });
+
+        match VoiceRecorder::start(configured_device) {
+            Ok(mut recorder) => {
+                let Some(mut events) = recorder.take_events() else {
+                    window.push_notification(
+                        Notification::error("Voice input failed to create an event stream."),
+                        cx,
+                    );
+                    return;
+                };
+
+                self.voice_base_input = self.input.read(cx).value().to_string();
+                self.voice_committed_text.clear();
                 self.voice_recorder = Some(recorder);
-                self.voice_state = VoiceInputState::Recording;
-                window
-                    .push_notification(Notification::info(crate::tr!("chat.voice_recording")), cx);
+                self.voice_state = VoiceInputState::Starting;
+                self.voice_task = Some(cx.spawn_in(window, async move |panel, cx| {
+                    while let Some(event) = events.next().await {
+                        let finished = matches!(event, VoiceEvent::Finished);
+                        _ = panel.update_in(cx, |this, window, cx| {
+                            this.handle_voice_event(event, window, cx);
+                        });
+                        if finished {
+                            return;
+                        }
+                    }
+
+                    _ = panel.update(cx, |this, cx| {
+                        this.finish_voice_input(false);
+                        cx.notify();
+                    });
+                }));
+                window.push_notification(Notification::info(crate::tr!("chat.voice_starting")), cx);
                 cx.notify();
             }
             Err(err) => {
@@ -992,71 +1030,119 @@ impl ConversationPanel {
     }
 
     fn stop_voice_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(recorder) = self.voice_recorder.take() else {
+        let Some(recorder) = self.voice_recorder.as_ref() else {
             self.voice_state = VoiceInputState::Idle;
             cx.notify();
             return;
         };
 
+        recorder.stop();
         self.voice_state = VoiceInputState::Transcribing;
         window.push_notification(Notification::info(crate::tr!("chat.voice_processing")), cx);
         cx.notify();
-
-        self.voice_task = Some(cx.spawn_in(window, async move |panel, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { recorder.stop_and_transcribe() })
-                .await;
-
-            _ = panel.update_in(cx, |this, window, cx| {
-                this.voice_task = None;
-                this.voice_state = VoiceInputState::Idle;
-                match result {
-                    Ok(transcript) => {
-                        this.insert_voice_transcript(transcript, window, cx);
-                    }
-                    Err(err) => {
-                        window.push_notification(Notification::error(err), cx);
-                    }
-                }
-                cx.notify();
-            });
-        }));
     }
 
-    fn insert_voice_transcript(
+    fn handle_voice_event(
         &mut self,
-        transcript: String,
+        event: VoiceEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let transcript = transcript.trim();
-        if transcript.is_empty() {
-            window.push_notification(Notification::error(crate::tr!("chat.voice_no_speech")), cx);
+        match event {
+            VoiceEvent::Ready { device_name } => {
+                self.voice_state = VoiceInputState::Recording;
+                window.push_notification(
+                    Notification::info(crate::tr!(
+                        "chat.voice_recording_device",
+                        device = device_name
+                    )),
+                    cx,
+                );
+            }
+            VoiceEvent::Preview(preview) => {
+                self.update_voice_input_preview(Some(&preview), window, cx);
+            }
+            VoiceEvent::Commit(text) => {
+                self.commit_voice_text(&text);
+                self.update_voice_input_preview(None, window, cx);
+            }
+            VoiceEvent::Error(err) => {
+                self.update_voice_input_preview(None, window, cx);
+                self.finish_voice_input(true);
+                window.push_notification(Notification::error(err), cx);
+            }
+            VoiceEvent::Finished => {
+                let recognized = !self.voice_committed_text.trim().is_empty();
+                self.finish_voice_input(true);
+                if recognized {
+                    window.push_notification(
+                        Notification::success(crate::tr!("chat.voice_transcribed")),
+                        cx,
+                    );
+                } else {
+                    window.push_notification(
+                        Notification::error(crate::tr!("chat.voice_no_speech")),
+                        cx,
+                    );
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn commit_voice_text(&mut self, text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
             return;
         }
 
-        let current = self.input.read(cx).value().to_string();
-        let value = if current.trim().is_empty() {
-            transcript.to_string()
-        } else if current.chars().last().is_some_and(char::is_whitespace) {
-            format!("{current}{transcript}")
-        } else {
-            format!("{current} {transcript}")
-        };
+        self.voice_committed_text =
+            Self::join_input_text(&self.voice_committed_text, text).to_string();
+    }
+
+    fn update_voice_input_preview(
+        &mut self,
+        preview: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut transcript = self.voice_committed_text.clone();
+        if let Some(preview) = preview.map(str::trim).filter(|preview| !preview.is_empty()) {
+            transcript = Self::join_input_text(&transcript, preview).to_string();
+        }
+        let value = Self::join_input_text(&self.voice_base_input, &transcript).to_string();
         self.input.update(cx, |state, cx| {
             state.set_value(value, window, cx);
             state.focus(window, cx);
         });
-        window.push_notification(
-            Notification::success(crate::tr!("chat.voice_transcribed")),
-            cx,
-        );
+    }
+
+    fn join_input_text(left: &str, right: &str) -> String {
+        let left = left.trim_end();
+        let right = right.trim();
+        if left.is_empty() {
+            right.to_string()
+        } else if right.is_empty() {
+            left.to_string()
+        } else {
+            format!("{left} {right}")
+        }
+    }
+
+    fn finish_voice_input(&mut self, clear_transcript: bool) {
+        self.voice_recorder = None;
+        self.voice_task = None;
+        self.voice_state = VoiceInputState::Idle;
+        self.voice_base_input.clear();
+        if clear_transcript {
+            self.voice_committed_text.clear();
+        }
     }
 
     fn voice_input_tooltip(&self) -> SharedString {
         match self.voice_state {
             VoiceInputState::Idle => crate::tr!("chat.voice_input"),
+            VoiceInputState::Starting => crate::tr!("chat.voice_starting"),
             VoiceInputState::Recording => crate::tr!("chat.voice_stop_recording"),
             VoiceInputState::Transcribing => crate::tr!("chat.voice_processing"),
         }
@@ -1887,7 +1973,10 @@ impl ConversationPanel {
         let id = self.id;
         let panel = cx.entity().downgrade();
         let voice_recording = self.voice_state == VoiceInputState::Recording;
-        let voice_transcribing = self.voice_state == VoiceInputState::Transcribing;
+        let voice_disabled = matches!(
+            self.voice_state,
+            VoiceInputState::Starting | VoiceInputState::Transcribing
+        );
         let voice_tooltip = self.voice_input_tooltip();
         let mcp_trigger = if mcp_active {
             Button::new(format!("panel-mcp-btn-{id}"))
@@ -2041,7 +2130,7 @@ impl ConversationPanel {
                                 Button::new(format!("panel-mic-btn-{id}"))
                                     .ghost()
                                     .small()
-                                    .disabled(voice_transcribing)
+                                    .disabled(voice_disabled)
                                     .tooltip(voice_tooltip.clone())
                                     .child(if voice_recording {
                                         Self::render_voice_wave_glyph(accent()).into_any_element()
@@ -2181,7 +2270,10 @@ impl ConversationPanel {
         let id = self.id;
         let panel = cx.entity().downgrade();
         let voice_recording = self.voice_state == VoiceInputState::Recording;
-        let voice_transcribing = self.voice_state == VoiceInputState::Transcribing;
+        let voice_disabled = matches!(
+            self.voice_state,
+            VoiceInputState::Starting | VoiceInputState::Transcribing
+        );
         let voice_tooltip = self.voice_input_tooltip();
 
         v_flex()
@@ -2284,7 +2376,7 @@ impl ConversationPanel {
                                     .small()
                                     .compact()
                                     .rounded(px(8.))
-                                    .disabled(voice_transcribing)
+                                    .disabled(voice_disabled)
                                     .tooltip(voice_tooltip.clone())
                                     .child(if voice_recording {
                                         Self::render_voice_wave_glyph(accent()).into_any_element()
@@ -2314,7 +2406,7 @@ impl ConversationPanel {
                                     .small()
                                     .compact()
                                     .rounded(px(8.))
-                                    .disabled(voice_transcribing)
+                                    .disabled(voice_disabled)
                                     .tooltip(voice_tooltip.clone())
                                     .child(if voice_recording {
                                         Self::render_voice_wave_glyph(accent()).into_any_element()

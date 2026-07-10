@@ -1,12 +1,13 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Sizable as _, TitleBar, WindowExt as _,
+    ActiveTheme, Icon, IconName, Sizable as _, TitleBar, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     h_flex,
     input::{Input, InputEvent, InputState},
     notification::Notification,
+    popover::{Popover, PopoverState},
     scroll::ScrollableElement as _,
     v_flex,
 };
@@ -16,6 +17,7 @@ use crate::dialogs::settings_row_switch;
 use crate::provider_settings::{ProviderSettings, SettingsSection};
 use crate::store;
 use crate::theme::{bg_color, border_color, hover_surface, sidebar_bg, text_2, text_3, text_color};
+use crate::voice_input;
 
 pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
@@ -24,6 +26,8 @@ pub(crate) struct SettingsWindow {
     mcp_status: SharedString,
     mcp_error: Option<SharedString>,
     mcp_dirty: bool,
+    audio_devices: Vec<String>,
+    audio_devices_error: Option<SharedString>,
     selected_section: SettingsSection,
     _subscriptions: Vec<Subscription>,
 }
@@ -36,6 +40,7 @@ struct GeneralSettingsSnapshot {
     persist_conversations: bool,
     document_parsing_enabled: bool,
     document_ocr_enabled: bool,
+    audio_input_device: SharedString,
     storage_dir: SharedString,
     config_dir: SharedString,
     save_error: Option<SharedString>,
@@ -48,6 +53,10 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Self {
         let provider_settings = cx.new(|cx| ProviderSettings::new(app.clone(), window, cx));
+        let (audio_devices, audio_devices_error) = match voice_input::input_device_names() {
+            Ok(devices) => (devices, None),
+            Err(err) => (Vec::new(), Some(err.into())),
+        };
         let (mcp_text, mcp_status, mcp_error) = match store::load_mcp_config_text() {
             Ok(text) => (text, crate::tr!("settings.mcp.loaded"), None),
             Err(err) => (
@@ -82,6 +91,8 @@ impl SettingsWindow {
             mcp_status,
             mcp_error,
             mcp_dirty: false,
+            audio_devices,
+            audio_devices_error,
             selected_section: SettingsSection::ModelManagement,
             _subscriptions: subscriptions,
         }
@@ -169,12 +180,108 @@ impl SettingsWindow {
             }))
     }
 
+    fn refresh_audio_devices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match voice_input::input_device_names() {
+            Ok(devices) => {
+                self.audio_devices = devices;
+                self.audio_devices_error = None;
+                window.push_notification(
+                    Notification::success(crate::tr!("settings.general.audio_devices_refreshed")),
+                    cx,
+                );
+            }
+            Err(err) => {
+                self.audio_devices.clear();
+                self.audio_devices_error = Some(err.clone().into());
+                window.push_notification(Notification::error(err), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn audio_device_menu_row(
+        id: impl Into<ElementId>,
+        label: SharedString,
+        value: String,
+        selected: bool,
+        app: WeakEntity<ClaudeApp>,
+        cx: &mut Context<PopoverState>,
+    ) -> Stateful<Div> {
+        h_flex()
+            .id(id)
+            .px_3p5()
+            .py_2p5()
+            .gap_2p5()
+            .items_center()
+            .cursor_pointer()
+            .text_size(px(13.))
+            .text_color(text_color())
+            .hover(|this| this.bg(hover_surface()))
+            .when(selected, |this| this.bg(bg_color()))
+            .child(div().w_4().when(selected, |this| {
+                this.child(Icon::new(IconName::Check).size_3p5().text_color(text_2()))
+            }))
+            .child(div().flex_1().min_w_0().truncate().child(label))
+            .on_click(cx.listener(move |popover, _, window, cx| {
+                if let Some(app) = app.upgrade() {
+                    app.update(cx, |app, cx| {
+                        app.set_audio_input_device(value.clone(), cx);
+                    });
+                }
+                popover.dismiss(window, cx);
+            }))
+    }
+
+    fn audio_device_menu(
+        devices: Vec<String>,
+        current: String,
+        app: WeakEntity<ClaudeApp>,
+        cx: &mut Context<PopoverState>,
+    ) -> impl IntoElement {
+        let mut menu = v_flex()
+            .id("audio-input-device-menu")
+            .w(px(320.))
+            .max_h(px(340.))
+            .overflow_y_scrollbar()
+            .py_1()
+            .child(Self::audio_device_menu_row(
+                "audio-input-system-default",
+                crate::tr!("settings.general.audio_input_system_default"),
+                String::new(),
+                current.is_empty(),
+                app.clone(),
+                cx,
+            ));
+
+        for (ix, device) in devices.into_iter().enumerate() {
+            let selected = current == device;
+            menu = menu.child(Self::audio_device_menu_row(
+                ("audio-input-device", ix),
+                device.clone().into(),
+                device,
+                selected,
+                app.clone(),
+                cx,
+            ));
+        }
+
+        menu
+    }
+
     fn render_general_settings(
         &self,
         settings: GeneralSettingsSnapshot,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let app = self.app.clone();
+        let audio_devices = self.audio_devices.clone();
+        let audio_devices_error = self.audio_devices_error.clone();
+        let audio_input_device = settings.audio_input_device.to_string();
+        let audio_input_label: SharedString = if audio_input_device.trim().is_empty() {
+            crate::tr!("settings.general.audio_input_system_default")
+        } else {
+            audio_input_device.clone().into()
+        };
         div()
             .size_full()
             .overflow_y_scrollbar()
@@ -239,6 +346,102 @@ impl SettingsWindow {
                                         app.clone(),
                                         cx,
                                     )),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .py_3()
+                            .items_center()
+                            .justify_between()
+                            .border_b_1()
+                            .border_color(border_color())
+                            .gap_4()
+                            .child(
+                                v_flex()
+                                    .min_w_0()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .text_size(px(13.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(crate::tr!(
+                                                "settings.general.audio_input_device"
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(text_3())
+                                            .child(crate::tr!(
+                                                "settings.general.audio_input_device_sub"
+                                            )),
+                                    )
+                                    .when_some(audio_devices_error.clone(), |this, error| {
+                                        this.child(
+                                            div()
+                                                .pt_1()
+                                                .text_size(px(12.))
+                                                .text_color(cx.theme().danger)
+                                                .child(error),
+                                        )
+                                    }),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_1()
+                                    .child(
+                                        Popover::new("audio-input-device-selector")
+                                            .anchor(Anchor::BottomRight)
+                                            .p_0()
+                                            .trigger(
+                                                Button::new("audio-input-device-button")
+                                                    .outline()
+                                                    .small()
+                                                    .max_w(px(280.))
+                                                    .child(
+                                                        h_flex()
+                                                            .min_w_0()
+                                                            .gap_1p5()
+                                                            .child(
+                                                                div()
+                                                                    .max_w(px(230.))
+                                                                    .truncate()
+                                                                    .child(
+                                                                        audio_input_label.clone(),
+                                                                    ),
+                                                            )
+                                                            .child(
+                                                                Icon::new(IconName::ChevronDown)
+                                                                    .size_3()
+                                                                    .text_color(text_3()),
+                                                            ),
+                                                    ),
+                                            )
+                                            .content({
+                                                let app = app.clone();
+                                                move |_, _, cx| {
+                                                    Self::audio_device_menu(
+                                                        audio_devices.clone(),
+                                                        audio_input_device.clone(),
+                                                        app.clone(),
+                                                        cx,
+                                                    )
+                                                    .into_any_element()
+                                                }
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("refresh-audio-input-devices")
+                                            .ghost()
+                                            .small()
+                                            .icon(IconName::Redo2)
+                                            .tooltip(crate::tr!(
+                                                "settings.general.refresh_audio_devices"
+                                            ))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.refresh_audio_devices(window, cx);
+                                            })),
+                                    ),
                             ),
                     )
                     .child(settings_row_switch(
@@ -938,6 +1141,7 @@ impl Render for SettingsWindow {
                     persist_conversations: settings.persist_conversations,
                     document_parsing_enabled: settings.document_parsing_enabled,
                     document_ocr_enabled: settings.document_ocr_enabled,
+                    audio_input_device: settings.audio_input_device.clone(),
                     storage_dir: settings.storage_dir.clone(),
                     config_dir: settings.config_dir.clone(),
                     save_error: app.last_save_error(),
@@ -951,6 +1155,7 @@ impl Render for SettingsWindow {
                 persist_conversations: true,
                 document_parsing_enabled: true,
                 document_ocr_enabled: false,
+                audio_input_device: "".into(),
                 storage_dir: "".into(),
                 config_dir: "".into(),
                 save_error: None,

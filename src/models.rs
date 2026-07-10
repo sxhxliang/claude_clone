@@ -154,6 +154,7 @@ pub(crate) struct AppSettings {
     pub(crate) persist_conversations: bool,
     pub(crate) document_parsing_enabled: bool,
     pub(crate) document_ocr_enabled: bool,
+    pub(crate) audio_input_device: SharedString,
     pub(crate) mcp_enabled: bool,
     pub(crate) mcp_server_enabled: HashMap<String, bool>,
     pub(crate) storage_dir: SharedString,
@@ -173,6 +174,7 @@ impl Default for AppSettings {
             persist_conversations: true,
             document_parsing_enabled: true,
             document_ocr_enabled: false,
+            audio_input_device: "".into(),
             mcp_enabled: true,
             mcp_server_enabled: HashMap::new(),
             storage_dir: "".into(),
@@ -689,6 +691,8 @@ pub(crate) struct PersistedAppSettings {
     pub(crate) document_parsing_enabled: bool,
     #[serde(default = "document_ocr_enabled_default")]
     pub(crate) document_ocr_enabled: bool,
+    #[serde(default)]
+    pub(crate) audio_input_device: String,
     #[serde(default = "mcp_enabled_default")]
     pub(crate) mcp_enabled: bool,
     #[serde(default)]
@@ -704,6 +708,7 @@ impl Default for PersistedAppSettings {
             persist_conversations: true,
             document_parsing_enabled: true,
             document_ocr_enabled: false,
+            audio_input_device: String::new(),
             mcp_enabled: true,
             mcp_server_enabled: HashMap::new(),
             storage_dir: String::new(),

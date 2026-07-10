@@ -1333,6 +1333,7 @@ impl ClaudeApp {
         let persist_conversations = saved_settings.persist_conversations;
         let document_parsing_enabled = saved_settings.document_parsing_enabled;
         let document_ocr_enabled = saved_settings.document_ocr_enabled;
+        let audio_input_device = saved_settings.audio_input_device.clone();
         let mcp_enabled = saved_settings.mcp_enabled;
         let mcp_server_enabled = saved_settings.mcp_server_enabled.clone();
         let config_dir = Self::path_label(store::config_dir());
@@ -1492,6 +1493,7 @@ impl ClaudeApp {
                 persist_conversations,
                 document_parsing_enabled,
                 document_ocr_enabled,
+                audio_input_device: audio_input_device.into(),
                 mcp_enabled,
                 mcp_server_enabled,
                 storage_dir,
@@ -1648,6 +1650,7 @@ impl ClaudeApp {
                 persist_conversations,
                 document_parsing_enabled: self.settings.document_parsing_enabled,
                 document_ocr_enabled: self.settings.document_ocr_enabled,
+                audio_input_device: self.settings.audio_input_device.to_string(),
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
@@ -1710,6 +1713,12 @@ impl ClaudeApp {
 
     pub(crate) fn set_document_ocr_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.settings.document_ocr_enabled = enabled;
+        self.save_state(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_audio_input_device(&mut self, device: String, cx: &mut Context<Self>) {
+        self.settings.audio_input_device = device.into();
         self.save_state(cx);
         cx.notify();
     }
@@ -1807,6 +1816,7 @@ impl ClaudeApp {
                 persist_conversations: self.settings.persist_conversations,
                 document_parsing_enabled: self.settings.document_parsing_enabled,
                 document_ocr_enabled: self.settings.document_ocr_enabled,
+                audio_input_device: self.settings.audio_input_device.to_string(),
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
