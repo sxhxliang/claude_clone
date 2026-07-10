@@ -27,6 +27,7 @@ use crate::chat_view::{
     ToolCall, ToolStep,
 };
 use crate::document_parser;
+use crate::export::{self, ExportFormat};
 use crate::genai_backend::{
     self, ChatImage, ChatTurn, GenerationCancel, ImageGenerationResult, StreamMsg,
 };
@@ -317,6 +318,17 @@ impl ConversationPanel {
             cowork_user_expanded: self.cowork_user_expanded.clone(),
             tool_expanded: self.tool_expanded.clone(),
         }
+    }
+
+    pub(crate) fn export_conversation(
+        &mut self,
+        format: ExportFormat,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let document = export::render_conversation(self.title.as_ref(), &self.messages, format);
+        let name = export::suggested_filename(self.title.as_ref(), format);
+        export::save_bytes(name, document.into_bytes(), window, cx);
     }
 
     pub(crate) fn set_project_id(&mut self, project_id: Option<usize>, cx: &mut Context<Self>) {
@@ -2875,6 +2887,18 @@ impl ChatViewState for ConversationPanel {
         );
     }
 
+    fn export_ai_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(message) = self.messages.get(ix) else {
+            return;
+        };
+        if message.role != ChatRole::Ai {
+            return;
+        }
+        let document = export::render_message(message, ExportFormat::Markdown);
+        let name = export::suggested_filename(self.title.as_ref(), ExportFormat::Markdown);
+        export::save_bytes(name, document.into_bytes(), window, cx);
+    }
+
     fn branch_conversation_from_message(
         &mut self,
         ix: usize,
@@ -3195,12 +3219,44 @@ impl Panel for ConversationPanel {
         &mut self,
         menu: PopupMenu,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> PopupMenu {
         let id = self.id;
         let app = self.app.clone();
+        let panel = cx.entity().downgrade();
 
-        menu.item(
+        menu.item(PopupMenuItem::new(crate::tr!("export.markdown")).on_click({
+            let panel = panel.clone();
+            move |_, window, cx| {
+                if let Some(panel) = panel.upgrade() {
+                    panel.update(cx, |panel, cx| {
+                        panel.export_conversation(ExportFormat::Markdown, window, cx)
+                    });
+                }
+            }
+        }))
+        .item(PopupMenuItem::new(crate::tr!("export.html")).on_click({
+            let panel = panel.clone();
+            move |_, window, cx| {
+                if let Some(panel) = panel.upgrade() {
+                    panel.update(cx, |panel, cx| {
+                        panel.export_conversation(ExportFormat::Html, window, cx)
+                    });
+                }
+            }
+        }))
+        .item(PopupMenuItem::new(crate::tr!("export.text")).on_click({
+            let panel = panel.clone();
+            move |_, window, cx| {
+                if let Some(panel) = panel.upgrade() {
+                    panel.update(cx, |panel, cx| {
+                        panel.export_conversation(ExportFormat::Text, window, cx)
+                    });
+                }
+            }
+        }))
+        .separator()
+        .item(
             PopupMenuItem::new(crate::tr!("menu.close_other_conversations")).on_click({
                 let app = app.clone();
                 move |_, window, cx| {

@@ -1,4 +1,6 @@
 use std::env;
+use std::fs;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -8,6 +10,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use sensevoice::{Recognizer, RecognizerConfig};
+use tokio::runtime::Runtime;
 
 const OUTPUT_SAMPLE_RATE: f64 = 16_000.0;
 const OUTPUT_SAMPLE_RATE_USIZE: usize = 16_000;
@@ -262,6 +265,133 @@ fn acquire_recognizer() -> Result<MutexGuard<'static, Option<Recognizer>>, Strin
         *recognizer = Some(load_recognizer()?);
     }
     Ok(recognizer)
+}
+
+/// Progress events emitted while downloading the SenseVoice model.
+pub(crate) enum DownloadProgress {
+    Progress { downloaded: u64, total: Option<u64> },
+    Done,
+    Error(String),
+}
+
+/// Dedicated Tokio runtime for the model download (mirrors `genai_backend`).
+fn runtime() -> &'static Runtime {
+    static RT: OnceLock<Runtime> = OnceLock::new();
+    RT.get_or_init(|| Runtime::new().expect("failed to start voice download runtime"))
+}
+
+/// Download the SenseVoice model from `url` into the models directory. Progress
+/// (and the final `Done`/`Error`) is forwarded over a runtime-agnostic channel
+/// that a GPUI `cx.spawn_in` can consume.
+pub(crate) fn download_model(url: String) -> UnboundedReceiver<DownloadProgress> {
+    let (tx, rx) = unbounded();
+    runtime().spawn(async move {
+        match download_model_inner(url, &tx).await {
+            Ok(()) => {
+                let _ = tx.unbounded_send(DownloadProgress::Done);
+            }
+            Err(err) => {
+                let _ = tx.unbounded_send(DownloadProgress::Error(err));
+            }
+        }
+    });
+    rx
+}
+
+async fn download_model_inner(
+    url: String,
+    tx: &UnboundedSender<DownloadProgress>,
+) -> Result<(), String> {
+    let dir = sensevoice_models_dir();
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("Failed to create model directory {}: {err}", dir.display()))?;
+
+    let file_name = model_file_name_from_url(&url);
+    let dest = dir.join(&file_name);
+    let temp = dir.join(format!("{file_name}.part"));
+
+    let client = reqwest::Client::builder()
+        .tls_backend_rustls()
+        .build()
+        .map_err(|err| format!("Failed to create HTTP client: {err}"))?;
+    let mut response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|err| format!("Failed to request {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed with HTTP status {}",
+            response.status()
+        ));
+    }
+
+    let total = response.content_length();
+    let mut file = fs::File::create(&temp)
+        .map_err(|err| format!("Failed to create {}: {err}", temp.display()))?;
+    let mut downloaded: u64 = 0;
+    let _ = tx.unbounded_send(DownloadProgress::Progress { downloaded, total });
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|err| format!("Download interrupted: {err}"))?
+    {
+        file.write_all(&chunk)
+            .map_err(|err| format!("Failed to write model file: {err}"))?;
+        downloaded += chunk.len() as u64;
+        let _ = tx.unbounded_send(DownloadProgress::Progress { downloaded, total });
+    }
+    file.flush()
+        .map_err(|err| format!("Failed to flush model file: {err}"))?;
+    drop(file);
+
+    // Move the completed file into place. A half-written `.part` is never picked
+    // up by `find_gguf`, so an interrupted download leaves the model uninstalled.
+    fs::rename(&temp, &dest)
+        .map_err(|err| format!("Failed to finalize model file {}: {err}", dest.display()))?;
+
+    reset_recognizer();
+    Ok(())
+}
+
+/// Pick the on-disk file name for a download URL so `find_gguf` will locate it:
+/// the name must end with `.gguf` and contain `sensevoice`.
+fn model_file_name_from_url(url: &str) -> String {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let raw = path
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or_default();
+
+    if !raw.to_ascii_lowercase().ends_with(".gguf") {
+        return "sensevoice-model.gguf".to_string();
+    }
+    if raw.to_ascii_lowercase().contains("sensevoice") {
+        raw.to_string()
+    } else {
+        format!("sensevoice-{raw}")
+    }
+}
+
+/// Drop the cached recognizer so the next transcription reloads from disk (e.g.
+/// after a freshly downloaded model replaces the previous one).
+fn reset_recognizer() {
+    if let Some(lock) = RECOGNIZER.get()
+        && let Ok(mut recognizer) = lock.lock()
+    {
+        *recognizer = None;
+    }
+}
+
+/// Whether a SenseVoice model file is present in the models directory.
+pub(crate) fn model_installed() -> bool {
+    RecognizerConfig::from_models_dir(sensevoice_models_dir()).is_ok()
+}
+
+/// The directory the model is downloaded to / loaded from, for display.
+pub(crate) fn models_dir_display() -> String {
+    sensevoice_models_dir().display().to_string()
 }
 
 fn sensevoice_models_dir() -> PathBuf {
@@ -638,7 +768,7 @@ fn clean_transcript_text(text: &str) -> String {
 mod tests {
     use super::{
         AUTO_FLUSH_SILENCE, DownmixResampler, EndpointState, Level, append_with_limit,
-        clean_transcript_text, expand_home_dir,
+        clean_transcript_text, expand_home_dir, model_file_name_from_url,
     };
     use std::path::PathBuf;
 
@@ -702,5 +832,24 @@ mod tests {
         append_with_limit(&mut buffer, &[4.0, 5.0, 6.0], 4);
 
         assert_eq!(buffer, vec![3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn derives_gguf_file_name_from_url() {
+        // A well-named gguf is kept as-is.
+        assert_eq!(
+            model_file_name_from_url("https://example.com/models/SenseVoiceSmall-q8.gguf"),
+            "SenseVoiceSmall-q8.gguf"
+        );
+        // A gguf without "sensevoice" gets the prefix (and query is stripped).
+        assert_eq!(
+            model_file_name_from_url("https://example.com/small-q8.gguf?download=1"),
+            "sensevoice-small-q8.gguf"
+        );
+        // A non-gguf URL falls back to a canonical, discoverable name.
+        assert_eq!(
+            model_file_name_from_url("https://example.com/download"),
+            "sensevoice-model.gguf"
+        );
     }
 }

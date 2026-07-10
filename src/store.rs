@@ -61,6 +61,11 @@ fn write_json_pretty<T: Serialize>(path: PathBuf, value: &T) -> Result<(), Strin
     write_atomic(path, json)
 }
 
+/// Write arbitrary bytes to `path` atomically. Exposed for the file-export flow.
+pub(crate) fn write_bytes(path: PathBuf, bytes: Vec<u8>) -> Result<(), String> {
+    write_atomic(path, bytes)
+}
+
 fn write_atomic(path: PathBuf, bytes: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {

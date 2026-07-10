@@ -37,6 +37,7 @@ mod chat_view;
 mod conversation_panel;
 mod dialogs;
 mod document_parser;
+mod export;
 mod genai_backend;
 mod i18n;
 mod mcp_backend;
@@ -1336,6 +1337,7 @@ impl ClaudeApp {
         let audio_input_device = saved_settings.audio_input_device.clone();
         let mcp_enabled = saved_settings.mcp_enabled;
         let mcp_server_enabled = saved_settings.mcp_server_enabled.clone();
+        let voice_model_url = saved_settings.voice_model_url.clone().into();
         let config_dir = Self::path_label(store::config_dir());
         let storage_dir = if saved_settings.storage_dir.trim().is_empty() {
             Self::path_label(store::default_storage_dir())
@@ -1498,6 +1500,7 @@ impl ClaudeApp {
                 mcp_server_enabled,
                 storage_dir,
                 config_dir,
+                voice_model_url,
                 ..AppSettings::default()
             },
             providers,
@@ -1654,6 +1657,7 @@ impl ClaudeApp {
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
+                voice_model_url: self.settings.voice_model_url.to_string(),
             },
             conversations: if persist_conversations {
                 self.conversations.clone()
@@ -1719,6 +1723,12 @@ impl ClaudeApp {
 
     pub(crate) fn set_audio_input_device(&mut self, device: String, cx: &mut Context<Self>) {
         self.settings.audio_input_device = device.into();
+        self.save_state(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_voice_model_url(&mut self, url: String, cx: &mut Context<Self>) {
+        self.settings.voice_model_url = url.into();
         self.save_state(cx);
         cx.notify();
     }
@@ -1820,6 +1830,7 @@ impl ClaudeApp {
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
+                voice_model_url: self.settings.voice_model_url.to_string(),
             },
             conversations: Vec::new(),
             projects: Vec::new(),
