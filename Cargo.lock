@@ -1130,6 +1130,7 @@ dependencies = [
  "markdown",
  "rmcp",
  "rust-i18n",
+ "sensevoice",
  "serde",
  "serde_json",
  "tokio",
@@ -6283,6 +6284,12 @@ dependencies = [
  "serde",
  "serde_core",
 ]
+
+[[package]]
+name = "sensevoice"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fe813eac108fdee79ba89b85e003c07a882323995fe08fa5e57647c58e90997"
 
 [[package]]
 name = "serde"
