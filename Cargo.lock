@@ -1128,6 +1128,7 @@ dependencies = [
  "image",
  "liteparse",
  "markdown",
+ "reqwest",
  "rmcp",
  "rust-i18n",
  "sensevoice",

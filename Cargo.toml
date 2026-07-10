@@ -28,6 +28,7 @@ gpui-updater = { git = "https://github.com/AprilNEA/gpui-updater", rev = "f6688e
 liteparse = { version = "2.1.1", default-features = false }
 markdown = "1"
 rmcp = { version = "0.15.0", features = ["client", "transport-child-process"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rust-i18n = "4.1"
 sensevoice = "0.1.0"
 serde = { version = "1", features = ["derive"] }

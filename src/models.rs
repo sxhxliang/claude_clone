@@ -158,6 +158,7 @@ pub(crate) struct AppSettings {
     pub(crate) mcp_server_enabled: HashMap<String, bool>,
     pub(crate) storage_dir: SharedString,
     pub(crate) config_dir: SharedString,
+    pub(crate) voice_model_url: SharedString,
     pub(crate) mode: ChatMode,
 }
 
@@ -177,6 +178,7 @@ impl Default for AppSettings {
             mcp_server_enabled: HashMap::new(),
             storage_dir: "".into(),
             config_dir: "".into(),
+            voice_model_url: "".into(),
             mode: ChatMode::Chat,
         }
     }
@@ -695,6 +697,8 @@ pub(crate) struct PersistedAppSettings {
     pub(crate) mcp_server_enabled: HashMap<String, bool>,
     #[serde(default)]
     pub(crate) storage_dir: String,
+    #[serde(default)]
+    pub(crate) voice_model_url: String,
 }
 
 impl Default for PersistedAppSettings {
@@ -707,6 +711,7 @@ impl Default for PersistedAppSettings {
             mcp_enabled: true,
             mcp_server_enabled: HashMap::new(),
             storage_dir: String::new(),
+            voice_model_url: String::new(),
         }
     }
 }

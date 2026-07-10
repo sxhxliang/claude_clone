@@ -1,7 +1,8 @@
+use futures::StreamExt as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Sizable as _, TitleBar, WindowExt as _,
+    ActiveTheme, Disableable as _, Icon, Sizable as _, TitleBar, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     h_flex,
@@ -15,7 +16,10 @@ use crate::ClaudeApp;
 use crate::dialogs::settings_row_switch;
 use crate::provider_settings::{ProviderSettings, SettingsSection};
 use crate::store;
-use crate::theme::{bg_color, border_color, hover_surface, sidebar_bg, text_2, text_3, text_color};
+use crate::theme::{
+    bg_color, border_color, green, hover_surface, sidebar_bg, text_2, text_3, text_color,
+    white_color,
+};
 
 pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
@@ -25,7 +29,30 @@ pub(crate) struct SettingsWindow {
     mcp_error: Option<SharedString>,
     mcp_dirty: bool,
     selected_section: SettingsSection,
+    voice_url_input: Entity<InputState>,
+    voice_download: VoiceDownloadState,
+    voice_download_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// Live state of the SenseVoice model download triggered from General settings.
+enum VoiceDownloadState {
+    Idle,
+    Downloading { downloaded: u64, total: Option<u64> },
+    Error(SharedString),
+}
+
+/// Human-readable download progress ("42% · 120.0 MB / 285.0 MB", or just the
+/// downloaded size when the server sends no Content-Length).
+fn format_download_progress(downloaded: u64, total: Option<u64>) -> SharedString {
+    let mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+    match total {
+        Some(total) if total > 0 => {
+            let pct = (downloaded as f64 / total as f64 * 100.0).round() as u64;
+            format!("{pct}% · {:.1} MB / {:.1} MB", mb(downloaded), mb(total)).into()
+        }
+        _ => format!("{:.1} MB", mb(downloaded)).into(),
+    }
 }
 
 struct GeneralSettingsSnapshot {
@@ -63,18 +90,38 @@ impl SettingsWindow {
                 .soft_wrap(true)
                 .default_value(mcp_text)
         });
-        let subscriptions = vec![cx.subscribe_in(
-            &mcp_input,
-            window,
-            |this: &mut SettingsWindow, _, event: &InputEvent, _, cx| {
-                if matches!(event, InputEvent::Change) {
-                    this.mcp_dirty = true;
-                    this.mcp_error = None;
-                    this.mcp_status = crate::tr!("settings.mcp.dirty");
-                    cx.notify();
-                }
-            },
-        )];
+        let voice_model_url = app
+            .upgrade()
+            .map(|app| app.read(cx).settings.voice_model_url.to_string())
+            .unwrap_or_default();
+        let voice_url_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::tr!("settings.general.voice_model_url_placeholder"))
+                .default_value(voice_model_url)
+        });
+        let subscriptions = vec![
+            cx.subscribe_in(
+                &mcp_input,
+                window,
+                |this: &mut SettingsWindow, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        this.mcp_dirty = true;
+                        this.mcp_error = None;
+                        this.mcp_status = crate::tr!("settings.mcp.dirty");
+                        cx.notify();
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &voice_url_input,
+                window,
+                |this: &mut SettingsWindow, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        this.persist_voice_url(cx);
+                    }
+                },
+            ),
+        ];
         Self {
             app,
             provider_settings,
@@ -83,6 +130,9 @@ impl SettingsWindow {
             mcp_error,
             mcp_dirty: false,
             selected_section: SettingsSection::ModelManagement,
+            voice_url_input,
+            voice_download: VoiceDownloadState::Idle,
+            voice_download_task: None,
             _subscriptions: subscriptions,
         }
     }
@@ -571,6 +621,11 @@ impl SettingsWindow {
                             }
                         },
                     ))
+                    .child(self.render_voice_model(
+                        crate::voice_input::model_installed(),
+                        crate::voice_input::models_dir_display().into(),
+                        cx,
+                    ))
                     .child(
                         div()
                             .pt_5()
@@ -705,6 +760,205 @@ impl SettingsWindow {
                             ),
                     ),
             )
+    }
+
+    fn persist_voice_url(&mut self, cx: &mut Context<Self>) {
+        let url = self.voice_url_input.read(cx).value().trim().to_string();
+        if let Some(app) = self.app.upgrade() {
+            app.update(cx, |app, cx| app.set_voice_model_url(url, cx));
+        }
+    }
+
+    fn start_voice_download(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.voice_download_task.is_some() {
+            return;
+        }
+        let url = self.voice_url_input.read(cx).value().trim().to_string();
+        if url.is_empty() {
+            window.push_notification(
+                Notification::error(crate::tr!("settings.general.voice_url_required")),
+                cx,
+            );
+            return;
+        }
+        self.persist_voice_url(cx);
+        self.voice_download = VoiceDownloadState::Downloading {
+            downloaded: 0,
+            total: None,
+        };
+        cx.notify();
+
+        let mut rx = crate::voice_input::download_model(url);
+        self.voice_download_task = Some(cx.spawn_in(window, async move |this, cx| {
+            while let Some(progress) = rx.next().await {
+                let finished = matches!(
+                    progress,
+                    crate::voice_input::DownloadProgress::Done
+                        | crate::voice_input::DownloadProgress::Error(_)
+                );
+                _ = this.update_in(cx, |this, window, cx| {
+                    this.apply_download_progress(progress, window, cx);
+                });
+                if finished {
+                    break;
+                }
+            }
+            _ = this.update_in(cx, |this, _, cx| {
+                this.voice_download_task = None;
+                cx.notify();
+            });
+        }));
+    }
+
+    fn apply_download_progress(
+        &mut self,
+        progress: crate::voice_input::DownloadProgress,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::voice_input::DownloadProgress;
+        match progress {
+            DownloadProgress::Progress { downloaded, total } => {
+                self.voice_download = VoiceDownloadState::Downloading { downloaded, total };
+            }
+            DownloadProgress::Done => {
+                self.voice_download = VoiceDownloadState::Idle;
+                window.push_notification(
+                    Notification::success(crate::tr!("settings.general.voice_model_downloaded")),
+                    cx,
+                );
+            }
+            DownloadProgress::Error(err) => {
+                self.voice_download = VoiceDownloadState::Error(err.clone().into());
+                window.push_notification(Notification::error(err), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn render_voice_model(
+        &self,
+        installed: bool,
+        models_dir: SharedString,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let downloading = matches!(self.voice_download, VoiceDownloadState::Downloading { .. });
+        let status_text = if installed {
+            crate::tr!("settings.general.voice_model_installed")
+        } else {
+            crate::tr!("settings.general.voice_model_missing")
+        };
+        let status_color = if installed { green() } else { text_3() };
+        let progress_line = match &self.voice_download {
+            VoiceDownloadState::Downloading { downloaded, total } => {
+                Some(format_download_progress(*downloaded, *total))
+            }
+            _ => None,
+        };
+        let error_line = match &self.voice_download {
+            VoiceDownloadState::Error(err) => Some(err.clone()),
+            _ => None,
+        };
+
+        v_flex()
+            .py_3()
+            .gap_2()
+            .border_b_1()
+            .border_color(border_color())
+            .child(
+                h_flex()
+                    .items_start()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        v_flex()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_size(px(13.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(crate::tr!("settings.general.voice_model")),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(text_3())
+                                    .child(crate::tr!("settings.general.voice_model_sub")),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(status_color)
+                            .child(status_text),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .gap_1p5()
+                    .items_center()
+                    .text_size(px(12.))
+                    .text_color(text_2())
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(text_3())
+                            .child(crate::tr!("settings.general.voice_model_location")),
+                    )
+                    .child(div().min_w_0().truncate().child(models_dir)),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h(px(40.))
+                            .px_3()
+                            .rounded(px(10.))
+                            .border_1()
+                            .border_color(border_color())
+                            .bg(white_color())
+                            .flex()
+                            .items_center()
+                            .child(
+                                Input::new(&self.voice_url_input)
+                                    .appearance(false)
+                                    .bordered(false)
+                                    .w_full(),
+                            ),
+                    )
+                    .child(
+                        Button::new("voice-download-model")
+                            .primary()
+                            .label(if downloading {
+                                crate::tr!("settings.general.voice_downloading")
+                            } else {
+                                crate::tr!("settings.general.voice_download")
+                            })
+                            .loading(downloading)
+                            .disabled(downloading)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.start_voice_download(window, cx);
+                            })),
+                    ),
+            )
+            .when_some(progress_line, |this, line| {
+                this.child(div().text_size(px(12.)).text_color(text_2()).child(line))
+            })
+            .when_some(error_line, |this, err| {
+                this.child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(cx.theme().danger)
+                        .child(err),
+                )
+            })
     }
 
     fn reload_mcp_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {

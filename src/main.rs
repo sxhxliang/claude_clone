@@ -1336,6 +1336,7 @@ impl ClaudeApp {
         let document_ocr_enabled = saved_settings.document_ocr_enabled;
         let mcp_enabled = saved_settings.mcp_enabled;
         let mcp_server_enabled = saved_settings.mcp_server_enabled.clone();
+        let voice_model_url = saved_settings.voice_model_url.clone().into();
         let config_dir = Self::path_label(store::config_dir());
         let storage_dir = if saved_settings.storage_dir.trim().is_empty() {
             Self::path_label(store::default_storage_dir())
@@ -1497,6 +1498,7 @@ impl ClaudeApp {
                 mcp_server_enabled,
                 storage_dir,
                 config_dir,
+                voice_model_url,
                 ..AppSettings::default()
             },
             providers,
@@ -1652,6 +1654,7 @@ impl ClaudeApp {
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
+                voice_model_url: self.settings.voice_model_url.to_string(),
             },
             conversations: if persist_conversations {
                 self.conversations.clone()
@@ -1711,6 +1714,12 @@ impl ClaudeApp {
 
     pub(crate) fn set_document_ocr_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.settings.document_ocr_enabled = enabled;
+        self.save_state(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_voice_model_url(&mut self, url: String, cx: &mut Context<Self>) {
+        self.settings.voice_model_url = url.into();
         self.save_state(cx);
         cx.notify();
     }
@@ -1811,6 +1820,7 @@ impl ClaudeApp {
                 mcp_enabled: self.settings.mcp_enabled,
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
+                voice_model_url: self.settings.voice_model_url.to_string(),
             },
             conversations: Vec::new(),
             projects: Vec::new(),
