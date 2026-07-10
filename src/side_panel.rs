@@ -1376,7 +1376,9 @@ impl SidePanel {
             ArtifactPayload::Image(image) => Some(image),
             ArtifactPayload::File => None,
         };
+        let export_image = preview.clone();
         let open_app = app.clone();
+        let export_app = app.clone();
 
         h_flex()
             .id(("artifact-item", ix))
@@ -1458,6 +1460,38 @@ impl SidePanel {
                                 }
                             }),
                     )
+                    .when_some(export_image, |this, image| {
+                        let export_app = export_app.clone();
+                        this.child(
+                            Button::new(format!("artifact-export-{ix}"))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::ArrowDown)
+                                .tooltip(crate::tr!("artifacts.save_to_disk"))
+                                .on_click(move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    match crate::export::image_export_target(&image) {
+                                        Some((name, bytes)) => {
+                                            if let Some(app) = export_app.upgrade() {
+                                                app.update(cx, |_, cx| {
+                                                    crate::export::save_bytes(
+                                                        name, bytes, window, cx,
+                                                    );
+                                                });
+                                            }
+                                        }
+                                        None => {
+                                            window.push_notification(
+                                                Notification::info(crate::tr!(
+                                                    "artifacts.remote_unsupported"
+                                                )),
+                                                cx,
+                                            );
+                                        }
+                                    }
+                                }),
+                        )
+                    })
                     .when_some(preview, |this, preview| {
                         this.child(
                             Button::new(format!("artifact-preview-{ix}"))

@@ -243,7 +243,7 @@ fn content_part_from_image(image: ChatImage) -> Result<ContentPart, String> {
     ))
 }
 
-fn parse_base64_data_url(url: &str) -> Option<(String, String)> {
+pub(crate) fn parse_base64_data_url(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("data:")?;
     let (header, content) = rest.split_once(',')?;
     if !header

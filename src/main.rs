@@ -37,6 +37,7 @@ mod chat_view;
 mod conversation_panel;
 mod dialogs;
 mod document_parser;
+mod export;
 mod genai_backend;
 mod i18n;
 mod mcp_backend;

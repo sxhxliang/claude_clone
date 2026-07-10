@@ -1116,6 +1116,7 @@ name = "claude_clone"
 version = "0.5.2"
 dependencies = [
  "anyhow",
+ "base64",
  "dirs",
  "futures",
  "genai",
@@ -1126,6 +1127,7 @@ dependencies = [
  "gpui_platform",
  "image",
  "liteparse",
+ "markdown",
  "rmcp",
  "rust-i18n",
  "serde",

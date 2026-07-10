@@ -302,6 +302,7 @@ chat_view:
   show_more: "显示更多"
   show_less: "收起"
   copy: "复制"
+  export: "导出"
   branch: "分支"
   delete: "删除"
   regenerate: "重新生成"
@@ -357,6 +358,8 @@ artifacts:
   empty_hint: "图片、文档和生成的文件会显示在这里。"
   copy_name: "复制名称"
   name_copied: "附件名称已复制"
+  save_to_disk: "保存到磁盘"
+  remote_unsupported: "无法保存该图片（远程来源）"
   open_source_message: "打开来源消息"
   preview_image: "预览图片"
   message_meta: "%{source} · %{time} · 消息 %{message}"
@@ -377,6 +380,11 @@ customize:
   title: "自定义 Claude"
   your_name: "你的名字"
   name_hint: "Claude 如何称呼你"
+export:
+  markdown: "导出 · Markdown"
+  html: "导出 · HTML（网页）"
+  text: "导出 · 纯文本"
+  saved: "已保存到磁盘"
 errors:
   serialize_config_failed: "序列化配置失败：%{error}"
   create_dir_failed: "创建目录失败 %{path}：%{error}"

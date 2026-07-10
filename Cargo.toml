@@ -11,6 +11,7 @@ resolver = "2"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 dirs = "6"
 futures = "0.3"
 genai = "=0.6.5"
@@ -25,6 +26,7 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", package
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", package = "gpui-component-assets" }
 gpui-updater = { git = "https://github.com/AprilNEA/gpui-updater", rev = "f6688e9a96eeb7058d96b1ec4b3a7af13f4f4323" }
 liteparse = { version = "2.1.1", default-features = false }
+markdown = "1"
 rmcp = { version = "0.15.0", features = ["client", "transport-child-process"] }
 rust-i18n = "4.1"
 serde = { version = "1", features = ["derive"] }

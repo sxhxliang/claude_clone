@@ -47,6 +47,7 @@ pub trait ChatViewState: Sized + 'static {
     );
     fn reveal_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>);
     fn copy_ai_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>);
+    fn export_ai_message(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>);
     fn branch_conversation_from_message(
         &mut self,
         ix: usize,
@@ -503,6 +504,13 @@ fn render_ai_actions<T: ChatViewState>(
             IconName::Copy,
             crate::tr!("chat_view.copy"),
             move |this, window, cx| this.copy_ai_message(ix, window, cx),
+            cx,
+        ))
+        .child(ai_message_action(
+            format!("export-ai-message-{ix}"),
+            IconName::ArrowDown,
+            crate::tr!("chat_view.export"),
+            move |this, window, cx| this.export_ai_message(ix, window, cx),
             cx,
         ))
         .child(ai_message_action(

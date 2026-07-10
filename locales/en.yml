@@ -302,6 +302,7 @@ chat_view:
   show_more: "Show more"
   show_less: "Show less"
   copy: "Copy"
+  export: "Export"
   branch: "Branch"
   delete: "Delete"
   regenerate: "Regenerate"
@@ -357,6 +358,8 @@ artifacts:
   empty_hint: "Images, documents, and generated files appear here."
   copy_name: "Copy name"
   name_copied: "Artifact name copied"
+  save_to_disk: "Save to disk"
+  remote_unsupported: "Can't save this image (remote source)"
   open_source_message: "Open source message"
   preview_image: "Preview image"
   message_meta: "%{source} · %{time} · Msg %{message}"
@@ -377,6 +380,11 @@ customize:
   title: "Customize Claude"
   your_name: "Your name"
   name_hint: "How Claude addresses you"
+export:
+  markdown: "Export · Markdown"
+  html: "Export · HTML"
+  text: "Export · Plain text"
+  saved: "Saved to disk"
 errors:
   serialize_config_failed: "Failed to serialize configuration: %{error}"
   create_dir_failed: "Failed to create directory %{path}: %{error}"
