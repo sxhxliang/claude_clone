@@ -1745,28 +1745,6 @@ impl ProviderSettings {
                     .child(self.render_editor(selected_provider, cx)),
             )
     }
-
-    pub(crate) fn render_theme_stub(&self) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .items_center()
-            .justify_center()
-            .gap_3()
-            .bg(panel_bg())
-            .child(
-                div()
-                    .text_size(px(28.))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_color())
-                    .child(crate::tr!("provider.theme_title")),
-            )
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .text_color(text_3())
-                    .child(crate::tr!("provider.theme_stub")),
-            )
-    }
 }
 
 impl Render for ProviderSettings {

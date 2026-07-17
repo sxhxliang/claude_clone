@@ -53,6 +53,7 @@ mod sidebar;
 mod store;
 mod system_file;
 mod theme;
+mod theme_settings;
 mod titlebar;
 mod voice_input;
 use app_updater::{UpdateStatus, Updater};
@@ -1315,6 +1316,7 @@ impl ClaudeApp {
             dock_layout,
         } = store::load();
         let locale = crate::i18n::set_locale(&saved_settings.locale);
+        crate::theme::apply(&saved_settings.theme, cx);
         let title_input = cx
             .new(|cx| InputState::new(window, cx).placeholder(crate::tr!("conversation.untitled")));
 
@@ -1501,6 +1503,7 @@ impl ClaudeApp {
                 storage_dir,
                 config_dir,
                 voice_model_url,
+                theme: saved_settings.theme.clone(),
                 ..AppSettings::default()
             },
             providers,
@@ -1658,6 +1661,7 @@ impl ClaudeApp {
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
                 voice_model_url: self.settings.voice_model_url.to_string(),
+                theme: self.settings.theme.clone(),
             },
             conversations: if persist_conversations {
                 self.conversations.clone()
@@ -1730,6 +1734,53 @@ impl ClaudeApp {
     pub(crate) fn set_voice_model_url(&mut self, url: String, cx: &mut Context<Self>) {
         self.settings.voice_model_url = url.into();
         self.save_state(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_theme_settings(
+        &mut self,
+        settings: crate::theme::ThemeSettings,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.theme = settings;
+        crate::theme::apply(&self.settings.theme, cx);
+        self.save_state(cx);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    pub(crate) fn import_theme_background(
+        &mut self,
+        source: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let asset = store::import_theme_background(source)?;
+        let previous = self.settings.theme.background.asset.replace(asset);
+        self.save_state(cx);
+        if let Some(err) = self.last_save_error.clone() {
+            if let Some(asset) = self.settings.theme.background.asset.take() {
+                let _ = store::remove_theme_background(&asset);
+            }
+            self.settings.theme.background.asset = previous;
+            return Err(err.to_string());
+        }
+        if let Some(previous) = previous {
+            let _ = store::remove_theme_background(&previous);
+        }
+        cx.refresh_windows();
+        cx.notify();
+        Ok(())
+    }
+
+    pub(crate) fn remove_theme_background(&mut self, cx: &mut Context<Self>) {
+        let previous = self.settings.theme.background.asset.take();
+        self.save_state(cx);
+        if self.last_save_error.is_none() {
+            if let Some(previous) = previous {
+                let _ = store::remove_theme_background(&previous);
+            }
+        }
+        cx.refresh_windows();
         cx.notify();
     }
 
@@ -1831,6 +1882,7 @@ impl ClaudeApp {
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
                 voice_model_url: self.settings.voice_model_url.to_string(),
+                theme: self.settings.theme.clone(),
             },
             conversations: Vec::new(),
             projects: Vec::new(),
@@ -2255,12 +2307,45 @@ impl Render for ClaudeApp {
         let sheet_layer = Root::render_sheet_layer(window, cx);
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let background = self.settings.theme.background.clone();
+        let make_background_layer = || {
+            background
+                .asset
+                .as_deref()
+                .and_then(crate::theme::asset_path)
+                .map(|path| {
+                    img(path)
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .object_fit(match background.fit {
+                            crate::theme::BackgroundFit::Fill => ObjectFit::Fill,
+                            crate::theme::BackgroundFit::Contain => ObjectFit::Contain,
+                            crate::theme::BackgroundFit::Cover => ObjectFit::Cover,
+                            crate::theme::BackgroundFit::ScaleDown => ObjectFit::ScaleDown,
+                            crate::theme::BackgroundFit::Original => ObjectFit::None,
+                        })
+                        .opacity(background.opacity)
+                        .into_any_element()
+                })
+        };
+        let background_layer = make_background_layer();
+        let chat_background = (background.scope == crate::theme::BackgroundScope::Chat)
+            .then(make_background_layer)
+            .flatten();
 
         v_flex()
             .size_full()
             .relative()
             .bg(bg_color())
             .text_color(text_color())
+            .children(
+                (background.scope == crate::theme::BackgroundScope::Window)
+                    .then_some(background_layer)
+                    .flatten(),
+            )
             .child(self.top_bar.clone())
             .child(
                 h_flex()
@@ -2274,6 +2359,8 @@ impl Render for ClaudeApp {
                             .min_h_0()
                             .min_w_0()
                             .h_full()
+                            .relative()
+                            .children(chat_background)
                             .child(self.dock_area.clone()),
                     ),
             )

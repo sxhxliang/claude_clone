@@ -21,11 +21,13 @@ use crate::theme::{
     bg_color, border_color, green, hover_surface, sidebar_bg, text_2, text_3, text_color,
     white_color,
 };
+use crate::theme_settings::ThemeSettingsView;
 use crate::voice_input;
 
 pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
     provider_settings: Entity<ProviderSettings>,
+    theme_settings: Entity<ThemeSettingsView>,
     mcp_input: Entity<InputState>,
     mcp_status: SharedString,
     mcp_error: Option<SharedString>,
@@ -80,6 +82,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Self {
         let provider_settings = cx.new(|cx| ProviderSettings::new(app.clone(), window, cx));
+        let theme_settings = cx.new(|cx| ThemeSettingsView::new(app.clone(), window, cx));
         let (audio_devices, audio_devices_error) = match voice_input::input_device_names() {
             Ok(devices) => (devices, None),
             Err(err) => (Vec::new(), Some(err.into())),
@@ -134,6 +137,7 @@ impl SettingsWindow {
         Self {
             app,
             provider_settings,
+            theme_settings,
             mcp_input,
             mcp_status,
             mcp_error,
@@ -1419,11 +1423,7 @@ impl Render for SettingsWindow {
         let content = match self.selected_section {
             SettingsSection::ModelManagement => self.provider_settings.clone().into_any_element(),
             SettingsSection::Mcp => self.render_mcp_settings(cx).into_any_element(),
-            SettingsSection::Theme => self
-                .provider_settings
-                .read(cx)
-                .render_theme_stub()
-                .into_any_element(),
+            SettingsSection::Theme => self.theme_settings.clone().into_any_element(),
             SettingsSection::General => self
                 .render_general_settings(general_settings, cx)
                 .into_any_element(),
@@ -1434,10 +1434,43 @@ impl Render for SettingsWindow {
             .map(|section| self.render_nav_item(section, cx).into_any_element())
             .collect();
 
+        let background = self
+            .app
+            .upgrade()
+            .map(|app| app.read(cx).settings.theme.background.clone())
+            .unwrap_or_default();
+        let background_layer = (background.scope == crate::theme::BackgroundScope::Window)
+            .then(|| {
+                background
+                    .asset
+                    .as_deref()
+                    .and_then(crate::theme::asset_path)
+                    .map(|path| {
+                        img(path)
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0()
+                            .object_fit(match background.fit {
+                                crate::theme::BackgroundFit::Fill => ObjectFit::Fill,
+                                crate::theme::BackgroundFit::Contain => ObjectFit::Contain,
+                                crate::theme::BackgroundFit::Cover => ObjectFit::Cover,
+                                crate::theme::BackgroundFit::ScaleDown => ObjectFit::ScaleDown,
+                                crate::theme::BackgroundFit::Original => ObjectFit::None,
+                            })
+                            .opacity(background.opacity)
+                            .into_any_element()
+                    })
+            })
+            .flatten();
+
         v_flex()
             .size_full()
+            .relative()
             .bg(bg_color())
             .text_color(text_color())
+            .children(background_layer)
             .child(self.render_title_bar())
             .child(
                 h_flex()
