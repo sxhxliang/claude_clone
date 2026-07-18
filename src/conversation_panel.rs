@@ -38,8 +38,8 @@ use crate::models::{
     TokenUsageStats, current_time_ms,
 };
 use crate::theme::{
-    accent, bg_color, border_color, green, pill_hover_bg, setup_row_hover_bg, text_2, text_3,
-    text_color, white_color,
+    accent, border_color, chat_bg_color, chat_surface_color, green, pill_hover_bg,
+    setup_row_hover_bg, text_2, text_3, text_color, white_color,
 };
 use crate::voice_input::{VoiceEvent, VoiceRecorder};
 use crate::{ClaudeApp, ConversationTabCloseScope};
@@ -1890,7 +1890,7 @@ impl ConversationPanel {
                     .overflow_hidden()
                     .border_1()
                     .border_color(border_color())
-                    .bg(white_color())
+                    .bg(chat_surface_color())
                     .child(chat_view::render_attachment_preview(image))
                     .when_some(local_path.clone(), |this, path| {
                         this.cursor_pointer()
@@ -1913,7 +1913,7 @@ impl ConversationPanel {
                             .m_1()
                             .size_5()
                             .rounded_full()
-                            .bg(white_color())
+                            .bg(chat_surface_color())
                             .border_1()
                             .border_color(border_color())
                             .flex()
@@ -2008,7 +2008,7 @@ impl ConversationPanel {
 
         v_flex()
             .w_full()
-            .bg(white_color())
+            .bg(chat_surface_color())
             .border_1()
             .border_color(border_color())
             .rounded_2xl()
@@ -2291,7 +2291,7 @@ impl ConversationPanel {
         v_flex()
             .w_full()
             .min_h(px(124.))
-            .bg(white_color())
+            .bg(chat_surface_color())
             .border_1()
             .border_color(border_color())
             .rounded(px(18.))
@@ -2454,7 +2454,7 @@ impl ConversationPanel {
             .rounded(px(7.))
             .border_1()
             .border_color(border_color())
-            .bg(white_color())
+            .bg(chat_surface_color())
             .text_size(px(13.5))
             .text_color(text_color())
             .cursor_pointer()
@@ -2552,7 +2552,7 @@ impl ConversationPanel {
                     .border_1()
                     .border_color(border_color())
                     .rounded_xl()
-                    .bg(white_color())
+                    .bg(chat_surface_color())
                     .overflow_hidden()
                     .shadow_sm()
                     .children(labels.iter().enumerate().map(|(ix, label)| {
@@ -2656,7 +2656,7 @@ impl ConversationPanel {
                             .m_3()
                             .size_8()
                             .rounded_full()
-                            .bg(white_color().opacity(0.92))
+                            .bg(chat_surface_color().opacity(0.92))
                             .border_1()
                             .border_color(border_color())
                             .flex()
@@ -2664,7 +2664,7 @@ impl ConversationPanel {
                             .justify_center()
                             .cursor_pointer()
                             .text_color(text_2())
-                            .hover(|this| this.bg(white_color()).text_color(text_color()))
+                            .hover(|this| this.bg(chat_surface_color()).text_color(text_color()))
                             .child(Icon::new(IconName::Close).size_4())
                             .on_click(|_, window, cx| {
                                 cx.stop_propagation();
@@ -2760,7 +2760,7 @@ impl ConversationPanel {
                             .id(("thinking-preview-dialog", panel_id))
                             .rounded_xl()
                             .overflow_hidden()
-                            .bg(white_color())
+                            .bg(chat_surface_color())
                             .child(
                                 h_flex()
                                     .px_4()
@@ -2787,7 +2787,7 @@ impl ConversationPanel {
                                             .cursor_pointer()
                                             .text_color(text_2())
                                             .hover(|this| {
-                                                this.bg(bg_color()).text_color(text_color())
+                                                this.bg(chat_bg_color()).text_color(text_color())
                                             })
                                             .child(Icon::new(IconName::Close).size_4())
                                             .on_click(|_, window, cx| {
@@ -3341,7 +3341,7 @@ impl Render for ConversationPanel {
             .id(("conversation-panel", self.id))
             .size_full()
             .relative()
-            .bg(bg_color())
+            .bg(chat_bg_color())
             .track_focus(&self.focus_handle)
             .child(
                 div().flex_1().min_h_0().child(

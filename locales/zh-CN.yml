@@ -177,6 +177,7 @@ settings:
     fit_fill: "拉伸填充"
     fit_scale_down: "仅缩小"
     fit_original: "原始尺寸"
+    reset_custom: "重置自定义颜色"
   general:
     title: "通用"
     description: "配置聊天历史、文档解析、搜索与记忆行为。"

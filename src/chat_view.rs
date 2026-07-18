@@ -21,8 +21,8 @@ use std::path::PathBuf;
 
 use crate::models::{BranchOrigin, TokenUsageStats};
 use crate::theme::{
-    accent, border_color, file_chip_bg, file_chip_hover_bg, hover_bg, text_2, text_3, text_color,
-    timeline_line, user_bubble_bg, white_color,
+    accent, border_color, chat_surface_color, file_chip_bg, file_chip_hover_bg, hover_bg, text_2,
+    text_3, text_color, timeline_line, user_bubble_bg, white_color,
 };
 use crate::{ChatMessage, ChatMode, ChatRole};
 
@@ -448,7 +448,7 @@ fn render_ai_message<T: ChatViewState>(
                 .py_2p5()
                 .rounded_xl()
                 .rounded_bl(px(4.))
-                .bg(white_color())
+                .bg(chat_surface_color())
                 .border_1()
                 .border_color(border_color())
                 .shadow_sm()
@@ -855,7 +855,7 @@ fn render_generated_image<T: ChatViewState>(
         .border_1()
         .border_color(border_color())
         .when(highlighted, |this| this.border_2().border_color(accent()))
-        .bg(white_color())
+        .bg(chat_surface_color())
         .shadow_sm()
         .child(
             div()
@@ -1541,7 +1541,7 @@ fn render_thinking(mode: ChatMode) -> Div {
                     .py_3()
                     .rounded_xl()
                     .rounded_bl(px(4.))
-                    .bg(white_color())
+                    .bg(chat_surface_color())
                     .border_1()
                     .border_color(border_color())
                     .child(typing_dot())

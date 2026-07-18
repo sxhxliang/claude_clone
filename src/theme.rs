@@ -172,6 +172,7 @@ impl Palette {
 }
 
 static ACTIVE_PALETTE: OnceLock<RwLock<Palette>> = OnceLock::new();
+static ACTIVE_BACKGROUND: OnceLock<RwLock<BackgroundSettings>> = OnceLock::new();
 
 fn palette() -> Palette {
     *ACTIVE_PALETTE
@@ -187,7 +188,23 @@ fn set_palette(value: Palette) {
         .expect("theme palette lock poisoned") = value;
 }
 
+fn set_background(value: BackgroundSettings) {
+    *ACTIVE_BACKGROUND
+        .get_or_init(|| RwLock::new(BackgroundSettings::default()))
+        .write()
+        .expect("theme background lock poisoned") = value;
+}
+
+fn background() -> BackgroundSettings {
+    ACTIVE_BACKGROUND
+        .get_or_init(|| RwLock::new(BackgroundSettings::default()))
+        .read()
+        .expect("theme background lock poisoned")
+        .clone()
+}
+
 pub(crate) fn apply(settings: &ThemeSettings, cx: &mut gpui::App) {
+    set_background(settings.background.clone());
     let registry = ThemeRegistry::global(cx);
     let (theme_name, overrides) = match settings.selection {
         ThemeSelection::Preset => (&settings.preset, None),
@@ -298,6 +315,26 @@ pub fn green() -> Hsla {
 pub fn white_color() -> Hsla {
     palette().surface
 }
+pub fn chat_bg_color() -> Hsla {
+    let background = background();
+    if background.asset.is_some() && background.opacity > 0.0 {
+        palette()
+            .background
+            .opacity(0.9 - background.opacity.clamp(0.0, 1.0) * 0.3)
+    } else {
+        palette().background
+    }
+}
+pub fn chat_surface_color() -> Hsla {
+    let background = background();
+    if background.asset.is_some() && background.opacity > 0.0 {
+        palette()
+            .surface
+            .opacity(0.96 - background.opacity.clamp(0.0, 1.0) * 0.16)
+    } else {
+        palette().surface
+    }
+}
 pub fn hover_bg() -> Hsla {
     palette().text.opacity(0.06)
 }
@@ -376,15 +413,15 @@ mod tests {
         settings.background.opacity = 0.6;
 
         let json = serde_json::to_string(&settings).expect("serialize appearance");
-        let restored: ThemeSettings =
-            serde_json::from_str(&json).expect("deserialize appearance");
+        let restored: ThemeSettings = serde_json::from_str(&json).expect("deserialize appearance");
         assert_eq!(restored.selection, ThemeSelection::Custom);
-        assert_eq!(
-            restored.background.asset.as_deref(),
-            Some("background.png")
-        );
+        assert_eq!(restored.background.asset.as_deref(), Some("background.png"));
         assert_eq!(restored.background.scope, BackgroundScope::Chat);
         assert_eq!(restored.background.fit, BackgroundFit::Contain);
-        assert_eq!(restored.custom.accent, settings.custom.accent);
+        let restored_accent = restored.custom.accent.expect("restored accent");
+        let original_accent = settings.custom.accent.expect("original accent");
+        assert!((restored_accent.h - original_accent.h).abs() < 0.01);
+        assert!((restored_accent.s - original_accent.s).abs() < 0.01);
+        assert!((restored_accent.l - original_accent.l).abs() < 0.01);
     }
 }

@@ -259,9 +259,24 @@ impl ThemeSettingsView {
             .asset
             .clone()
             .unwrap_or_else(|| crate::tr!("settings.theme.no_image").to_string());
+        let preview = settings
+            .asset
+            .as_deref()
+            .and_then(theme::asset_path)
+            .map(|path| {
+                div()
+                    .w_full()
+                    .h(px(160.))
+                    .rounded_lg()
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(theme::border_color())
+                    .child(img(path).size_full().object_fit(ObjectFit::Cover))
+            });
         let app = self.app.clone();
         v_flex()
             .gap_2()
+            .children(preview)
             .child(div().text_size(px(13.)).child(asset_label))
             .child(
                 h_flex()
@@ -380,6 +395,21 @@ impl Render for ThemeSettingsView {
                         .into_iter()
                         .map(|(key, state)| self.render_color_row(key, state)),
                 ),
+            )
+            .child(
+                Button::new("reset-custom-theme")
+                    .label(crate::tr!("settings.theme.reset_custom"))
+                    .outline()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(app) = this.app.upgrade() {
+                            app.update(cx, |app, cx| {
+                                let mut settings = app.settings.theme.clone();
+                                settings.selection = theme::ThemeSelection::Custom;
+                                settings.custom = theme::ThemeColorOverrides::default();
+                                app.set_theme_settings(settings, cx);
+                            });
+                        }
+                    })),
             )
             .child(self.render_background(cx))
             .on_mouse_up(

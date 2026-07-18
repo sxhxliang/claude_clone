@@ -1756,12 +1756,14 @@ impl ClaudeApp {
     ) -> Result<(), String> {
         let asset = store::import_theme_background(source)?;
         let previous = self.settings.theme.background.asset.replace(asset);
+        crate::theme::apply(&self.settings.theme, cx);
         self.save_state(cx);
         if let Some(err) = self.last_save_error.clone() {
             if let Some(asset) = self.settings.theme.background.asset.take() {
                 let _ = store::remove_theme_background(&asset);
             }
             self.settings.theme.background.asset = previous;
+            crate::theme::apply(&self.settings.theme, cx);
             return Err(err.to_string());
         }
         if let Some(previous) = previous {
@@ -1774,11 +1776,15 @@ impl ClaudeApp {
 
     pub(crate) fn remove_theme_background(&mut self, cx: &mut Context<Self>) {
         let previous = self.settings.theme.background.asset.take();
+        crate::theme::apply(&self.settings.theme, cx);
         self.save_state(cx);
         if self.last_save_error.is_none() {
             if let Some(previous) = previous {
                 let _ = store::remove_theme_background(&previous);
             }
+        } else {
+            self.settings.theme.background.asset = previous;
+            crate::theme::apply(&self.settings.theme, cx);
         }
         cx.refresh_windows();
         cx.notify();

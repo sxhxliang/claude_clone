@@ -177,6 +177,7 @@ settings:
     fit_fill: "Fill"
     fit_scale_down: "Scale down"
     fit_original: "Original"
+    reset_custom: "Reset custom colors"
   general:
     title: "General"
     description: "Configure chat history, document parsing, search, and memory behavior."
