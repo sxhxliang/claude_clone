@@ -1448,17 +1448,12 @@ impl Render for SettingsWindow {
                     .map(|path| {
                         img(path)
                             .absolute()
+                            .size_full()
                             .top_0()
                             .left_0()
                             .right_0()
                             .bottom_0()
-                            .object_fit(match background.fit {
-                                crate::theme::BackgroundFit::Fill => ObjectFit::Fill,
-                                crate::theme::BackgroundFit::Contain => ObjectFit::Contain,
-                                crate::theme::BackgroundFit::Cover => ObjectFit::Cover,
-                                crate::theme::BackgroundFit::ScaleDown => ObjectFit::ScaleDown,
-                                crate::theme::BackgroundFit::Original => ObjectFit::None,
-                            })
+                            .object_fit(background.fit.object_fit())
                             .opacity(background.opacity)
                             .into_any_element()
                     })

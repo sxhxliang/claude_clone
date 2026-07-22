@@ -2322,25 +2322,17 @@ impl Render for ClaudeApp {
                 .map(|path| {
                     img(path)
                         .absolute()
+                        .size_full()
                         .top_0()
                         .left_0()
                         .right_0()
                         .bottom_0()
-                        .object_fit(match background.fit {
-                            crate::theme::BackgroundFit::Fill => ObjectFit::Fill,
-                            crate::theme::BackgroundFit::Contain => ObjectFit::Contain,
-                            crate::theme::BackgroundFit::Cover => ObjectFit::Cover,
-                            crate::theme::BackgroundFit::ScaleDown => ObjectFit::ScaleDown,
-                            crate::theme::BackgroundFit::Original => ObjectFit::None,
-                        })
+                        .object_fit(background.fit.object_fit())
                         .opacity(background.opacity)
                         .into_any_element()
                 })
         };
         let background_layer = make_background_layer();
-        let chat_background = (background.scope == crate::theme::BackgroundScope::Chat)
-            .then(make_background_layer)
-            .flatten();
 
         v_flex()
             .size_full()
@@ -2366,7 +2358,6 @@ impl Render for ClaudeApp {
                             .min_w_0()
                             .h_full()
                             .relative()
-                            .children(chat_background)
                             .child(self.dock_area.clone()),
                     ),
             )

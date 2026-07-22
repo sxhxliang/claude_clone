@@ -172,6 +172,7 @@ settings:
     whole_window: "Whole window"
     chat_only: "Chat only"
     opacity: "Opacity"
+    fit_title: "Image fit"
     fit_cover: "Cover"
     fit_contain: "Contain"
     fit_fill: "Fill"

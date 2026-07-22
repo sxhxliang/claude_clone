@@ -3337,12 +3337,34 @@ impl Render for ConversationPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_message_scroll_anchors();
         let empty = self.messages.is_empty() && !self.pending;
+        let background = self
+            .app
+            .upgrade()
+            .map(|app| app.read(cx).settings.theme.background.clone())
+            .unwrap_or_default();
+        let background_layer = background
+            .asset
+            .as_deref()
+            .and_then(crate::theme::asset_path)
+            .map(|path| {
+                img(path)
+                    .absolute()
+                    .size_full()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .object_fit(background.fit.object_fit())
+                    .opacity(background.opacity)
+                    .into_any_element()
+            });
         v_flex()
             .id(("conversation-panel", self.id))
             .size_full()
             .relative()
             .bg(chat_bg_color())
             .track_focus(&self.focus_handle)
+            .children(background_layer)
             .child(
                 div().flex_1().min_h_0().child(
                     div()

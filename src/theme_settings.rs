@@ -271,7 +271,7 @@ impl ThemeSettingsView {
                     .overflow_hidden()
                     .border_1()
                     .border_color(theme::border_color())
-                    .child(img(path).size_full().object_fit(ObjectFit::Cover))
+                    .child(img(path).size_full().object_fit(settings.fit.object_fit()))
             });
         let app = self.app.clone();
         v_flex()
@@ -341,22 +341,30 @@ impl ThemeSettingsView {
                     }))
             )
             .child(
-                h_flex().gap_1().children([
-                    ("fit-cover", crate::tr!("settings.theme.fit_cover"), theme::BackgroundFit::Cover),
-                    ("fit-contain", crate::tr!("settings.theme.fit_contain"), theme::BackgroundFit::Contain),
-                    ("fit-fill", crate::tr!("settings.theme.fit_fill"), theme::BackgroundFit::Fill),
-                    ("fit-scale-down", crate::tr!("settings.theme.fit_scale_down"), theme::BackgroundFit::ScaleDown),
-                    ("fit-original", crate::tr!("settings.theme.fit_original"), theme::BackgroundFit::Original),
-                ].into_iter().map(|(id, label, fit)| {
-                    Button::new(id)
-                        .small()
-                        .label(label)
-                        .when(settings.fit == fit, |b| b.primary())
-                        .when(settings.fit != fit, |b| b.outline())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.update_background(|s| s.background.fit = fit, cx);
-                        }))
-                }))
+                v_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(theme::text_2())
+                            .child(crate::tr!("settings.theme.fit_title")),
+                    )
+                    .child(h_flex().flex_wrap().gap_1().children([
+                        ("fit-cover", crate::tr!("settings.theme.fit_cover"), theme::BackgroundFit::Cover),
+                        ("fit-contain", crate::tr!("settings.theme.fit_contain"), theme::BackgroundFit::Contain),
+                        ("fit-fill", crate::tr!("settings.theme.fit_fill"), theme::BackgroundFit::Fill),
+                        ("fit-scale-down", crate::tr!("settings.theme.fit_scale_down"), theme::BackgroundFit::ScaleDown),
+                        ("fit-original", crate::tr!("settings.theme.fit_original"), theme::BackgroundFit::Original),
+                    ].into_iter().map(|(id, label, fit)| {
+                        Button::new(id)
+                            .small()
+                            .label(label)
+                            .when(settings.fit == fit, |b| b.primary())
+                            .when(settings.fit != fit, |b| b.outline())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.update_background(|s| s.background.fit = fit, cx);
+                            }))
+                    })))
             )
             .child(
                 h_flex()

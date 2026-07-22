@@ -11,7 +11,7 @@ use std::{
     sync::{OnceLock, RwLock},
 };
 
-use gpui::{BorrowAppContext as _, Hsla, hsla};
+use gpui::{BorrowAppContext as _, Hsla, ObjectFit, hsla};
 use gpui_component::{ActiveTheme as _, Colorize as _, Theme, ThemeMode, ThemeRegistry};
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +39,18 @@ pub(crate) enum BackgroundFit {
     Cover,
     ScaleDown,
     Original,
+}
+
+impl BackgroundFit {
+    pub(crate) fn object_fit(self) -> ObjectFit {
+        match self {
+            Self::Fill => ObjectFit::Fill,
+            Self::Contain => ObjectFit::Contain,
+            Self::Cover => ObjectFit::Cover,
+            Self::ScaleDown => ObjectFit::ScaleDown,
+            Self::Original => ObjectFit::None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -378,6 +390,27 @@ mod tests {
         assert_eq!(settings.background.fit, BackgroundFit::Cover);
         assert_eq!(settings.background.opacity, 0.25);
         assert!(settings.background.asset.is_none());
+    }
+
+    #[test]
+    fn background_fit_maps_to_gpui_object_fit() {
+        assert!(matches!(
+            BackgroundFit::Cover.object_fit(),
+            ObjectFit::Cover
+        ));
+        assert!(matches!(
+            BackgroundFit::Contain.object_fit(),
+            ObjectFit::Contain
+        ));
+        assert!(matches!(BackgroundFit::Fill.object_fit(), ObjectFit::Fill));
+        assert!(matches!(
+            BackgroundFit::ScaleDown.object_fit(),
+            ObjectFit::ScaleDown
+        ));
+        assert!(matches!(
+            BackgroundFit::Original.object_fit(),
+            ObjectFit::None
+        ));
     }
 
     #[test]

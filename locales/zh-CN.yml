@@ -172,6 +172,7 @@ settings:
     whole_window: "整个窗口"
     chat_only: "仅聊天区"
     opacity: "透明度"
+    fit_title: "图片渲染方式"
     fit_cover: "裁切铺满"
     fit_contain: "完整显示"
     fit_fill: "拉伸填充"
