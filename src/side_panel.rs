@@ -27,7 +27,7 @@ use crate::panel_data::{
     project_tree,
 };
 use crate::theme::{
-    border_color, file_chip_bg, hover_bg, sidebar_bg, text_2, text_3, text_color, white_color,
+    border_color, file_chip_bg, hover_bg, sidebar_bg, surface, text_2, text_3, text_color,
 };
 
 pub(crate) const PROJECTS_PANEL_NAME: &str = "ClaudeProjectsPanel";
@@ -527,7 +527,7 @@ impl SidePanel {
                                 .rounded_md()
                                 .border_1()
                                 .border_color(border_color())
-                                .bg(white_color())
+                                .bg(surface())
                                 .flex()
                                 .items_center()
                                 .child(
@@ -597,7 +597,7 @@ impl SidePanel {
             .rounded_lg()
             .border_1()
             .border_color(border_color())
-            .bg(white_color())
+            .bg(surface())
             .overflow_hidden()
             .child(
                 h_flex()
@@ -1174,9 +1174,9 @@ impl SidePanel {
             .text_size(px(11.5))
             .text_color(if selected { text_color() } else { text_2() })
             .when(selected, |this| {
-                this.bg(white_color()).font_weight(FontWeight::SEMIBOLD)
+                this.bg(surface()).font_weight(FontWeight::SEMIBOLD)
             })
-            .hover(|this| this.bg(white_color()).text_color(text_color()))
+            .hover(|this| this.bg(surface()).text_color(text_color()))
             .child(div().truncate().child(filter.short_label()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.artifact_type_filter = filter;
@@ -1208,9 +1208,9 @@ impl SidePanel {
             .text_size(px(11.))
             .text_color(if selected { text_color() } else { text_2() })
             .when(selected, |this| {
-                this.bg(white_color()).font_weight(FontWeight::SEMIBOLD)
+                this.bg(surface()).font_weight(FontWeight::SEMIBOLD)
             })
-            .hover(|this| this.bg(white_color()).text_color(text_color()))
+            .hover(|this| this.bg(surface()).text_color(text_color()))
             .child(div().truncate().child(filter.short_label()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.artifact_time_filter = filter;
@@ -1388,7 +1388,7 @@ impl SidePanel {
             .rounded_lg()
             .border_1()
             .border_color(border_color())
-            .bg(white_color())
+            .bg(surface())
             .cursor_pointer()
             .hover(|this| this.bg(hover_bg()))
             .child(Self::render_artifact_preview(ix, artifact.kind.clone()))
@@ -1582,7 +1582,7 @@ impl SidePanel {
                         v_flex()
                             .rounded_xl()
                             .overflow_hidden()
-                            .bg(white_color())
+                            .bg(surface())
                             .child(
                                 div()
                                     .relative()
@@ -1602,7 +1602,7 @@ impl SidePanel {
                                             .m_3()
                                             .size_8()
                                             .rounded_full()
-                                            .bg(white_color().opacity(0.92))
+                                            .bg(surface().opacity(0.92))
                                             .border_1()
                                             .border_color(border_color())
                                             .flex()
@@ -1611,7 +1611,7 @@ impl SidePanel {
                                             .cursor_pointer()
                                             .text_color(text_2())
                                             .hover(|this| {
-                                                this.bg(white_color()).text_color(text_color())
+                                                this.bg(surface()).text_color(text_color())
                                             })
                                             .child(Icon::new(IconName::Close).size_4())
                                             .on_click(|_, window, cx| {

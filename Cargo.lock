@@ -6483,9 +6483,9 @@ dependencies = [
 
 [[package]]
 name = "sensevoice"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fe813eac108fdee79ba89b85e003c07a882323995fe08fa5e57647c58e90997"
+checksum = "0222f519f61b25d17c95217ce535de98786b7e12f0e24eb60ba057f9e221be6f"
 
 [[package]]
 name = "serde"

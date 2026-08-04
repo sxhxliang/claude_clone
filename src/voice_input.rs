@@ -9,8 +9,49 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+#[cfg(feature = "voice-transcribe")]
 use sensevoice::{Recognizer, RecognizerConfig};
 use tokio::runtime::Runtime;
+
+#[cfg(not(feature = "voice-transcribe"))]
+use disabled::{Recognizer, RecognizerConfig};
+
+/// Stand-ins for the `sensevoice` types used when the `voice-transcribe`
+/// feature is off, so microphone capture, device selection and model download
+/// still build without the bundled llama.cpp backend. Every entry point reports
+/// that transcription is unavailable, which surfaces as a `VoiceEvent::Error`.
+#[cfg(not(feature = "voice-transcribe"))]
+mod disabled {
+    use std::path::Path;
+
+    pub(super) const UNAVAILABLE: &str = "Local voice transcription is not compiled into this build. Rebuild with `--features voice-transcribe` to enable SenseVoice.";
+
+    pub(super) struct Recognizer;
+
+    impl Recognizer {
+        pub(super) fn new(_config: RecognizerConfig) -> Result<Self, String> {
+            Err(UNAVAILABLE.to_string())
+        }
+
+        pub(super) fn transcribe_pcm_16k(&mut self, _pcm: &[f32]) -> Result<String, String> {
+            Err(UNAVAILABLE.to_string())
+        }
+    }
+
+    pub(super) struct RecognizerConfig {
+        pub(super) vad_model: Option<()>,
+    }
+
+    impl RecognizerConfig {
+        pub(super) fn from_models_dir(_dir: impl AsRef<Path>) -> Result<Self, String> {
+            Err(UNAVAILABLE.to_string())
+        }
+
+        pub(super) fn with_threads(self, _threads: i32) -> Self {
+            self
+        }
+    }
+}
 
 const OUTPUT_SAMPLE_RATE: f64 = 16_000.0;
 const OUTPUT_SAMPLE_RATE_USIZE: usize = 16_000;
@@ -382,6 +423,13 @@ fn reset_recognizer() {
     {
         *recognizer = None;
     }
+}
+
+/// Whether this build can run local transcription. Microphone capture, device
+/// selection and model download work either way; only the SenseVoice step is
+/// gated behind the `voice-transcribe` feature.
+pub(crate) fn transcription_supported() -> bool {
+    cfg!(feature = "voice-transcribe")
 }
 
 /// Whether a SenseVoice model file is present in the models directory.

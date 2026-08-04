@@ -61,7 +61,7 @@ use conversation_panel::ConversationPanel;
 use dialogs::static_row;
 use genai_backend::ChatRoute;
 use models::{
-    AppSettings, BranchOrigin, ChatMessage, ChatMode, ChatRole, Conversation,
+    AppSettings, AppThemeMode, BranchOrigin, ChatMessage, ChatMode, ChatRole, Conversation,
     ConversationPanelLayout, CurrentModel, PersistedAppSettings, PersistedState, Project, Provider,
     ProviderKind, ProviderModel, current_time_ms,
 };
@@ -1338,6 +1338,23 @@ impl ClaudeApp {
         let mcp_enabled = saved_settings.mcp_enabled;
         let mcp_server_enabled = saved_settings.mcp_server_enabled.clone();
         let voice_model_url = saved_settings.voice_model_url.clone().into();
+        let theme_mode = saved_settings.theme_mode;
+        // Resolve the saved mode before the first paint so the window opens in
+        // the right palette instead of flashing light.
+        theme::apply_mode(theme_mode, Some(window), cx);
+        // Keep `System` tracking the OS after startup, not just at launch.
+        subs.push(window.observe_window_appearance({
+            let app = cx.entity().downgrade();
+            move |window, cx| {
+                let Some(app) = app.upgrade() else {
+                    return;
+                };
+                let mode = app.read(cx).settings.theme_mode;
+                if mode == AppThemeMode::System {
+                    theme::apply_mode(mode, Some(window), cx);
+                }
+            }
+        }));
         let config_dir = Self::path_label(store::config_dir());
         let storage_dir = if saved_settings.storage_dir.trim().is_empty() {
             Self::path_label(store::default_storage_dir())
@@ -1501,6 +1518,7 @@ impl ClaudeApp {
                 storage_dir,
                 config_dir,
                 voice_model_url,
+                theme_mode,
                 ..AppSettings::default()
             },
             providers,
@@ -1658,6 +1676,7 @@ impl ClaudeApp {
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
                 voice_model_url: self.settings.voice_model_url.to_string(),
+                theme_mode: self.settings.theme_mode,
             },
             conversations: if persist_conversations {
                 self.conversations.clone()
@@ -1748,6 +1767,23 @@ impl ClaudeApp {
         cx.notify();
     }
 
+    /// Persist and apply a theme choice. Repaints every window so the main
+    /// window and the settings window flip together.
+    pub(crate) fn set_theme_mode(
+        &mut self,
+        mode: AppThemeMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.theme_mode == mode {
+            return;
+        }
+        self.settings.theme_mode = mode;
+        theme::apply_mode(mode, Some(window), cx);
+        self.save_state(cx);
+        cx.notify();
+    }
+
     pub(crate) fn set_mcp_server_enabled(
         &mut self,
         server_name: String,
@@ -1831,6 +1867,7 @@ impl ClaudeApp {
                 mcp_server_enabled: self.settings.mcp_server_enabled.clone(),
                 storage_dir: self.settings.storage_dir.to_string(),
                 voice_model_url: self.settings.voice_model_url.to_string(),
+                theme_mode: self.settings.theme_mode,
             },
             conversations: Vec::new(),
             projects: Vec::new(),

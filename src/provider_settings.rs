@@ -23,92 +23,156 @@ use std::{
 use crate::ClaudeApp;
 use crate::genai_backend;
 use crate::models::{Provider, ProviderKind, ProviderModel};
-use crate::theme::{accent, bg_color, sidebar_bg, text_2, text_3, text_color, white_color};
+use crate::theme::{accent, bg_color, pick, sidebar_bg, text_2, text_3, text_color, white_color};
 
 fn panel_bg() -> Hsla {
-    hsla(42.0 / 360.0, 0.30, 0.975, 1.0)
+    pick(
+        hsla(42.0 / 360.0, 0.30, 0.975, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.145, 1.0),
+    )
 }
 
 fn paper_bg() -> Hsla {
-    hsla(42.0 / 360.0, 0.26, 0.955, 1.0)
+    pick(
+        hsla(42.0 / 360.0, 0.26, 0.955, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.165, 1.0),
+    )
 }
 
 fn elevated_bg() -> Hsla {
-    hsla(0.0, 0.0, 1.0, 0.94)
+    pick(
+        hsla(0.0, 0.0, 1.0, 0.94),
+        hsla(40.0 / 360.0, 0.05, 0.19, 0.94),
+    )
 }
 
 fn clay() -> Hsla {
-    hsla(16.0 / 360.0, 0.46, 0.44, 1.0)
+    pick(
+        hsla(16.0 / 360.0, 0.46, 0.44, 1.0),
+        hsla(16.0 / 360.0, 0.50, 0.62, 1.0),
+    )
 }
 
 fn clay_soft_bg() -> Hsla {
-    hsla(20.0 / 360.0, 0.42, 0.91, 1.0)
+    pick(
+        hsla(20.0 / 360.0, 0.42, 0.91, 1.0),
+        hsla(18.0 / 360.0, 0.30, 0.24, 1.0),
+    )
 }
 
 fn clay_hover_bg() -> Hsla {
-    hsla(22.0 / 360.0, 0.38, 0.88, 1.0)
+    pick(
+        hsla(22.0 / 360.0, 0.38, 0.88, 1.0),
+        hsla(20.0 / 360.0, 0.30, 0.29, 1.0),
+    )
 }
 
 fn enabled_badge_bg() -> Hsla {
-    hsla(150.0 / 360.0, 0.28, 0.91, 1.0)
+    pick(
+        hsla(150.0 / 360.0, 0.28, 0.91, 1.0),
+        hsla(150.0 / 360.0, 0.28, 0.22, 1.0),
+    )
 }
 
 fn enabled_badge_text() -> Hsla {
-    hsla(150.0 / 360.0, 0.34, 0.32, 1.0)
+    pick(
+        hsla(150.0 / 360.0, 0.34, 0.32, 1.0),
+        hsla(150.0 / 360.0, 0.40, 0.68, 1.0),
+    )
 }
 
 fn disabled_badge_bg() -> Hsla {
-    hsla(36.0 / 360.0, 0.10, 0.90, 1.0)
+    pick(
+        hsla(36.0 / 360.0, 0.10, 0.90, 1.0),
+        hsla(38.0 / 360.0, 0.06, 0.24, 1.0),
+    )
 }
 
 fn disabled_badge_text() -> Hsla {
-    hsla(35.0 / 360.0, 0.08, 0.42, 1.0)
+    pick(
+        hsla(35.0 / 360.0, 0.08, 0.42, 1.0),
+        hsla(38.0 / 360.0, 0.06, 0.66, 1.0),
+    )
 }
 
 fn warning_bg() -> Hsla {
-    hsla(42.0 / 360.0, 0.55, 0.90, 1.0)
+    pick(
+        hsla(42.0 / 360.0, 0.55, 0.90, 1.0),
+        hsla(40.0 / 360.0, 0.40, 0.24, 1.0),
+    )
 }
 
 fn warning_text() -> Hsla {
-    hsla(32.0 / 360.0, 0.55, 0.38, 1.0)
+    pick(
+        hsla(32.0 / 360.0, 0.55, 0.38, 1.0),
+        hsla(40.0 / 360.0, 0.70, 0.68, 1.0),
+    )
 }
 
 fn search_bg() -> Hsla {
-    hsla(42.0 / 360.0, 0.22, 0.965, 1.0)
+    pick(
+        hsla(42.0 / 360.0, 0.22, 0.965, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.16, 1.0),
+    )
 }
 
 fn search_border() -> Hsla {
-    hsla(37.0 / 360.0, 0.12, 0.84, 1.0)
+    pick(
+        hsla(37.0 / 360.0, 0.12, 0.84, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.27, 1.0),
+    )
 }
 
 fn divider() -> Hsla {
-    hsla(38.0 / 360.0, 0.12, 0.86, 1.0)
+    pick(
+        hsla(38.0 / 360.0, 0.12, 0.86, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.24, 1.0),
+    )
 }
 
 fn muted_surface() -> Hsla {
-    hsla(40.0 / 360.0, 0.18, 0.935, 1.0)
+    pick(
+        hsla(40.0 / 360.0, 0.18, 0.935, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.185, 1.0),
+    )
 }
 
 fn field_bg() -> Hsla {
-    hsla(40.0 / 360.0, 0.22, 0.972, 1.0)
+    pick(
+        hsla(40.0 / 360.0, 0.22, 0.972, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.155, 1.0),
+    )
 }
 
 fn selected_row_bg() -> Hsla {
-    hsla(30.0 / 360.0, 0.35, 0.90, 1.0)
+    pick(
+        hsla(30.0 / 360.0, 0.35, 0.90, 1.0),
+        hsla(22.0 / 360.0, 0.28, 0.26, 1.0),
+    )
 }
 
 fn row_bg() -> Hsla {
-    hsla(42.0 / 360.0, 0.18, 0.945, 1.0)
+    pick(
+        hsla(42.0 / 360.0, 0.18, 0.945, 1.0),
+        hsla(40.0 / 360.0, 0.05, 0.175, 1.0),
+    )
 }
 
 fn row_hover_bg() -> Hsla {
-    hsla(36.0 / 360.0, 0.22, 0.925, 1.0)
+    pick(
+        hsla(36.0 / 360.0, 0.22, 0.925, 1.0),
+        hsla(40.0 / 360.0, 0.06, 0.22, 1.0),
+    )
 }
 
 fn selected_row_border() -> Hsla {
-    hsla(18.0 / 360.0, 0.32, 0.70, 1.0)
+    pick(
+        hsla(18.0 / 360.0, 0.32, 0.70, 1.0),
+        hsla(18.0 / 360.0, 0.36, 0.46, 1.0),
+    )
 }
 
+/// Brand identity colors, intentionally kept identical in both themes.
 fn avatar_color(kind: ProviderKind) -> Hsla {
     match kind {
         ProviderKind::OpenAI | ProviderKind::OpenAIResp | ProviderKind::GithubCopilot => {
@@ -1743,28 +1807,6 @@ impl ProviderSettings {
                     .py_5()
                     .bg(panel_bg())
                     .child(self.render_editor(selected_provider, cx)),
-            )
-    }
-
-    pub(crate) fn render_theme_stub(&self) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .items_center()
-            .justify_center()
-            .gap_3()
-            .bg(panel_bg())
-            .child(
-                div()
-                    .text_size(px(28.))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_color())
-                    .child(crate::tr!("provider.theme_title")),
-            )
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .text_color(text_3())
-                    .child(crate::tr!("provider.theme_stub")),
             )
     }
 }

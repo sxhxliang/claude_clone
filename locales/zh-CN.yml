@@ -143,6 +143,15 @@ settings:
     description: "切换界面显示语言。"
     en: "英文"
     zh_cn: "简体中文"
+  theme:
+    title: "主题"
+    description: "选择界面的外观。"
+    mode: "外观"
+    mode_sub: "浅色、深色，或跟随系统设置。"
+    light: "浅色"
+    dark: "深色"
+    system: "跟随系统"
+    resolved: "当前显示："
   sections:
     models: "模型管理"
     mcp: "MCP"
@@ -182,6 +191,7 @@ settings:
     voice_model_location: "模型位置："
     voice_model_installed: "已安装"
     voice_model_missing: "未下载"
+    voice_model_unsupported: "当前构建未启用"
     voice_download: "下载"
     voice_downloading: "下载中…"
     voice_model_downloaded: "语音模型已下载"
@@ -257,8 +267,6 @@ provider:
   all_enabled: "已启用全部模型"
   all_disabled: "已停用全部模型"
   sync_models: "同步模型"
-  theme_title: "主题"
-  theme_stub: "预留为主题与外观配置区。"
 search:
   placeholder: "搜索对话..."
   you: "你"

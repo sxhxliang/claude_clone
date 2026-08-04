@@ -143,6 +143,15 @@ settings:
     description: "Switch the interface language."
     en: "English"
     zh_cn: "Simplified Chinese"
+  theme:
+    title: "Theme"
+    description: "Choose how the interface looks."
+    mode: "Appearance"
+    mode_sub: "Light, dark, or follow the system setting."
+    light: "Light"
+    dark: "Dark"
+    system: "System"
+    resolved: "Currently showing:"
   sections:
     models: "Model Management"
     mcp: "MCP"
@@ -182,6 +191,7 @@ settings:
     voice_model_location: "Model location:"
     voice_model_installed: "Installed"
     voice_model_missing: "Not downloaded"
+    voice_model_unsupported: "Not in this build"
     voice_download: "Download"
     voice_downloading: "Downloading…"
     voice_model_downloaded: "Voice model downloaded"
@@ -257,8 +267,6 @@ provider:
   all_enabled: "All models enabled"
   all_disabled: "All models disabled"
   sync_models: "Sync models"
-  theme_title: "Theme"
-  theme_stub: "Reserved for theme and appearance configuration."
 search:
   placeholder: "Search conversations..."
   you: "You"

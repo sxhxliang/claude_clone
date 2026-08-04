@@ -13,7 +13,7 @@ use gpui_component::{
 
 use crate::ClaudeApp;
 use crate::menus::chat_title_menu_content;
-use crate::theme::{accent, border_color, text_2, text_3, text_color, white_color};
+use crate::theme::{accent, border_color, surface, text_2, text_3, text_color};
 
 pub(crate) struct TopBar {
     app: WeakEntity<ClaudeApp>,
@@ -45,7 +45,7 @@ impl TopBar {
                 .rounded_md()
                 .border_1()
                 .border_color(border_color())
-                .bg(white_color())
+                .bg(surface())
                 .w(px(320.))
                 .child(
                     div()
@@ -192,7 +192,7 @@ impl Render for TopBar {
                                 .rounded_full()
                                 .border_1()
                                 .border_color(border_color())
-                                .bg(white_color())
+                                .bg(surface())
                                 .text_size(px(12.5))
                                 .text_color(text_2())
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

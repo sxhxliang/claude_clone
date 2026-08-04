@@ -15,13 +15,30 @@ use gpui_component::{
 
 use crate::ClaudeApp;
 use crate::dialogs::settings_row_switch;
+use crate::models::AppThemeMode;
 use crate::provider_settings::{ProviderSettings, SettingsSection};
 use crate::store;
 use crate::theme::{
-    bg_color, border_color, green, hover_surface, sidebar_bg, text_2, text_3, text_color,
-    white_color,
+    bg_color, border_color, green, hover_surface, pick, sidebar_bg, surface, text_2, text_3,
+    text_color,
 };
 use crate::voice_input;
+
+/// Background of the highlighted settings-nav icon badge.
+fn selected_nav_icon_bg() -> Hsla {
+    pick(
+        hsla(145.0 / 360.0, 0.58, 0.92, 1.0),
+        hsla(145.0 / 360.0, 0.32, 0.22, 1.0),
+    )
+}
+
+/// Foreground of the highlighted settings-nav icon badge.
+fn selected_nav_icon_fg() -> Hsla {
+    pick(
+        hsla(145.0 / 360.0, 0.48, 0.34, 1.0),
+        hsla(145.0 / 360.0, 0.45, 0.68, 1.0),
+    )
+}
 
 pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
@@ -174,12 +191,15 @@ impl SettingsWindow {
                     .size(px(34.))
                     .rounded_full()
                     .bg(if selected {
-                        hsla(145.0 / 360.0, 0.58, 0.92, 1.0)
+                        selected_nav_icon_bg()
                     } else {
-                        hsla(40.0 / 360.0, 0.12, 0.90, 1.0)
+                        pick(
+                            hsla(40.0 / 360.0, 0.12, 0.90, 1.0),
+                            hsla(40.0 / 360.0, 0.05, 0.22, 1.0),
+                        )
                     })
                     .text_color(if selected {
-                        hsla(145.0 / 360.0, 0.48, 0.34, 1.0)
+                        selected_nav_icon_fg()
                     } else {
                         text_2()
                     })
@@ -228,6 +248,113 @@ impl SettingsWindow {
                 }
                 cx.notify();
             }))
+    }
+
+    fn render_theme_mode_button(
+        &self,
+        mode: AppThemeMode,
+        current: AppThemeMode,
+        app: WeakEntity<ClaudeApp>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let selected = mode == current;
+        Button::new(SharedString::from(format!("settings-theme-{}", mode.id())))
+            .small()
+            .label(mode.label())
+            .when(selected, |this| this.primary())
+            .when(!selected, |this| this.outline())
+            .on_click(cx.listener(move |_, _, window, cx| {
+                if let Some(app) = app.upgrade() {
+                    app.update(cx, |app, cx| {
+                        app.set_theme_mode(mode, window, cx);
+                    });
+                }
+                cx.notify();
+            }))
+    }
+
+    fn render_theme_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let app = self.app.clone();
+        let current = app
+            .upgrade()
+            .map(|app| app.read(cx).settings.theme_mode)
+            .unwrap_or_default();
+        let resolved = if crate::theme::is_dark() {
+            crate::tr!("settings.theme.dark")
+        } else {
+            crate::tr!("settings.theme.light")
+        };
+
+        div()
+            .size_full()
+            .overflow_y_scrollbar()
+            .bg(surface())
+            .child(
+                v_flex()
+                    .min_h_full()
+                    .px_8()
+                    .py_7()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(30.))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(text_color())
+                            .child(crate::tr!("settings.theme.title")),
+                    )
+                    .child(
+                        div()
+                            .pb_4()
+                            .text_size(px(13.))
+                            .text_color(text_3())
+                            .child(crate::tr!("settings.theme.description")),
+                    )
+                    .child(
+                        h_flex()
+                            .py_3()
+                            .items_center()
+                            .justify_between()
+                            .border_b_1()
+                            .border_color(border_color())
+                            .gap_4()
+                            .child(
+                                v_flex()
+                                    .min_w_0()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .text_size(px(13.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(crate::tr!("settings.theme.mode")),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(text_3())
+                                            .child(crate::tr!("settings.theme.mode_sub")),
+                                    ),
+                            )
+                            .child(h_flex().gap_2().children(AppThemeMode::ALL.map(|mode| {
+                                self.render_theme_mode_button(mode, current, app.clone(), cx)
+                                    .into_any_element()
+                            }))),
+                    )
+                    .child(
+                        h_flex()
+                            .py_3()
+                            .gap_1p5()
+                            .items_center()
+                            .text_size(px(12.))
+                            .text_color(text_2())
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_color(text_3())
+                                    .child(crate::tr!("settings.theme.resolved")),
+                            )
+                            .child(div().font_weight(FontWeight::MEDIUM).child(resolved)),
+                    ),
+            )
     }
 
     fn refresh_audio_devices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -335,7 +462,7 @@ impl SettingsWindow {
         div()
             .size_full()
             .overflow_y_scrollbar()
-            .bg(hsla(0.0, 0.0, 1.0, 1.0))
+            .bg(surface())
             .child(
                 v_flex()
                     .min_h_full()
@@ -1046,12 +1173,18 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let downloading = matches!(self.voice_download, VoiceDownloadState::Downloading { .. });
-        let status_text = if installed {
-            crate::tr!("settings.general.voice_model_installed")
-        } else {
-            crate::tr!("settings.general.voice_model_missing")
+        let supported = crate::voice_input::transcription_supported();
+        let (status_text, status_color) = match (supported, installed) {
+            (false, _) => (
+                crate::tr!("settings.general.voice_model_unsupported"),
+                text_3(),
+            ),
+            (true, true) => (
+                crate::tr!("settings.general.voice_model_installed"),
+                green(),
+            ),
+            (true, false) => (crate::tr!("settings.general.voice_model_missing"), text_3()),
         };
-        let status_color = if installed { green() } else { text_3() };
         let progress_line = match &self.voice_download {
             VoiceDownloadState::Downloading { downloaded, total } => {
                 Some(format_download_progress(*downloaded, *total))
@@ -1126,7 +1259,7 @@ impl SettingsWindow {
                             .rounded(px(10.))
                             .border_1()
                             .border_color(border_color())
-                            .bg(white_color())
+                            .bg(surface())
                             .flex()
                             .items_center()
                             .child(
@@ -1228,7 +1361,7 @@ impl SettingsWindow {
         div()
             .size_full()
             .overflow_y_scrollbar()
-            .bg(hsla(0.0, 0.0, 1.0, 1.0))
+            .bg(surface())
             .child(
                 v_flex()
                     .min_h_full()
@@ -1349,8 +1482,8 @@ impl SettingsWindow {
                             div()
                                 .size(px(24.))
                                 .rounded_full()
-                                .bg(hsla(145.0 / 360.0, 0.58, 0.92, 1.0))
-                                .text_color(hsla(145.0 / 360.0, 0.48, 0.34, 1.0))
+                                .bg(selected_nav_icon_bg())
+                                .text_color(selected_nav_icon_fg())
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1419,11 +1552,7 @@ impl Render for SettingsWindow {
         let content = match self.selected_section {
             SettingsSection::ModelManagement => self.provider_settings.clone().into_any_element(),
             SettingsSection::Mcp => self.render_mcp_settings(cx).into_any_element(),
-            SettingsSection::Theme => self
-                .provider_settings
-                .read(cx)
-                .render_theme_stub()
-                .into_any_element(),
+            SettingsSection::Theme => self.render_theme_settings(cx).into_any_element(),
             SettingsSection::General => self
                 .render_general_settings(general_settings, cx)
                 .into_any_element(),
