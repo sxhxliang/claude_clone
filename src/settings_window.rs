@@ -15,13 +15,13 @@ use gpui_component::{
 
 use crate::ClaudeApp;
 use crate::dialogs::settings_row_switch;
-use crate::models::AppThemeMode;
 use crate::provider_settings::{ProviderSettings, SettingsSection};
 use crate::store;
 use crate::theme::{
     bg_color, border_color, green, hover_surface, pick, sidebar_bg, surface, text_2, text_3,
     text_color,
 };
+use crate::theme_settings::ThemeSettingsView;
 use crate::voice_input;
 
 /// Background of the highlighted settings-nav icon badge.
@@ -43,6 +43,7 @@ fn selected_nav_icon_fg() -> Hsla {
 pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
     provider_settings: Entity<ProviderSettings>,
+    theme_settings: Entity<ThemeSettingsView>,
     mcp_input: Entity<InputState>,
     mcp_status: SharedString,
     mcp_error: Option<SharedString>,
@@ -97,6 +98,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> Self {
         let provider_settings = cx.new(|cx| ProviderSettings::new(app.clone(), window, cx));
+        let theme_settings = cx.new(|cx| ThemeSettingsView::new(app.clone(), window, cx));
         let (audio_devices, audio_devices_error) = match voice_input::input_device_names() {
             Ok(devices) => (devices, None),
             Err(err) => (Vec::new(), Some(err.into())),
@@ -151,6 +153,7 @@ impl SettingsWindow {
         Self {
             app,
             provider_settings,
+            theme_settings,
             mcp_input,
             mcp_status,
             mcp_error,
@@ -248,113 +251,6 @@ impl SettingsWindow {
                 }
                 cx.notify();
             }))
-    }
-
-    fn render_theme_mode_button(
-        &self,
-        mode: AppThemeMode,
-        current: AppThemeMode,
-        app: WeakEntity<ClaudeApp>,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let selected = mode == current;
-        Button::new(SharedString::from(format!("settings-theme-{}", mode.id())))
-            .small()
-            .label(mode.label())
-            .when(selected, |this| this.primary())
-            .when(!selected, |this| this.outline())
-            .on_click(cx.listener(move |_, _, window, cx| {
-                if let Some(app) = app.upgrade() {
-                    app.update(cx, |app, cx| {
-                        app.set_theme_mode(mode, window, cx);
-                    });
-                }
-                cx.notify();
-            }))
-    }
-
-    fn render_theme_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let app = self.app.clone();
-        let current = app
-            .upgrade()
-            .map(|app| app.read(cx).settings.theme_mode)
-            .unwrap_or_default();
-        let resolved = if crate::theme::is_dark() {
-            crate::tr!("settings.theme.dark")
-        } else {
-            crate::tr!("settings.theme.light")
-        };
-
-        div()
-            .size_full()
-            .overflow_y_scrollbar()
-            .bg(surface())
-            .child(
-                v_flex()
-                    .min_h_full()
-                    .px_8()
-                    .py_7()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_size(px(30.))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(text_color())
-                            .child(crate::tr!("settings.theme.title")),
-                    )
-                    .child(
-                        div()
-                            .pb_4()
-                            .text_size(px(13.))
-                            .text_color(text_3())
-                            .child(crate::tr!("settings.theme.description")),
-                    )
-                    .child(
-                        h_flex()
-                            .py_3()
-                            .items_center()
-                            .justify_between()
-                            .border_b_1()
-                            .border_color(border_color())
-                            .gap_4()
-                            .child(
-                                v_flex()
-                                    .min_w_0()
-                                    .gap_0p5()
-                                    .child(
-                                        div()
-                                            .text_size(px(13.5))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .child(crate::tr!("settings.theme.mode")),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(12.))
-                                            .text_color(text_3())
-                                            .child(crate::tr!("settings.theme.mode_sub")),
-                                    ),
-                            )
-                            .child(h_flex().gap_2().children(AppThemeMode::ALL.map(|mode| {
-                                self.render_theme_mode_button(mode, current, app.clone(), cx)
-                                    .into_any_element()
-                            }))),
-                    )
-                    .child(
-                        h_flex()
-                            .py_3()
-                            .gap_1p5()
-                            .items_center()
-                            .text_size(px(12.))
-                            .text_color(text_2())
-                            .child(
-                                div()
-                                    .flex_shrink_0()
-                                    .text_color(text_3())
-                                    .child(crate::tr!("settings.theme.resolved")),
-                            )
-                            .child(div().font_weight(FontWeight::MEDIUM).child(resolved)),
-                    ),
-            )
     }
 
     fn refresh_audio_devices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1552,7 +1448,7 @@ impl Render for SettingsWindow {
         let content = match self.selected_section {
             SettingsSection::ModelManagement => self.provider_settings.clone().into_any_element(),
             SettingsSection::Mcp => self.render_mcp_settings(cx).into_any_element(),
-            SettingsSection::Theme => self.render_theme_settings(cx).into_any_element(),
+            SettingsSection::Theme => self.theme_settings.clone().into_any_element(),
             SettingsSection::General => self
                 .render_general_settings(general_settings, cx)
                 .into_any_element(),
@@ -1563,10 +1459,38 @@ impl Render for SettingsWindow {
             .map(|section| self.render_nav_item(section, cx).into_any_element())
             .collect();
 
+        let background = self
+            .app
+            .upgrade()
+            .map(|app| app.read(cx).settings.theme.background.clone())
+            .unwrap_or_default();
+        let background_layer = (background.scope == crate::theme::BackgroundScope::Window)
+            .then(|| {
+                background
+                    .asset
+                    .as_deref()
+                    .and_then(crate::theme::asset_path)
+                    .map(|path| {
+                        img(path)
+                            .absolute()
+                            .size_full()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0()
+                            .object_fit(background.fit.object_fit())
+                            .opacity(background.opacity)
+                            .into_any_element()
+                    })
+            })
+            .flatten();
+
         v_flex()
             .size_full()
+            .relative()
             .bg(bg_color())
             .text_color(text_color())
+            .children(background_layer)
             .child(self.render_title_bar())
             .child(
                 h_flex()

@@ -142,38 +142,6 @@ impl Project {
     }
 }
 
-/// How the palette resolves. `System` follows the OS appearance and keeps
-/// tracking it; `Light`/`Dark` pin the choice.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AppThemeMode {
-    Light,
-    Dark,
-    #[default]
-    System,
-}
-
-impl AppThemeMode {
-    pub(crate) const ALL: [Self; 3] = [Self::Light, Self::Dark, Self::System];
-
-    /// Stable id used for element ids.
-    pub(crate) fn id(self) -> &'static str {
-        match self {
-            Self::Light => "light",
-            Self::Dark => "dark",
-            Self::System => "system",
-        }
-    }
-
-    pub(crate) fn label(self) -> SharedString {
-        match self {
-            Self::Light => crate::tr!("settings.theme.light"),
-            Self::Dark => crate::tr!("settings.theme.dark"),
-            Self::System => crate::tr!("settings.theme.system"),
-        }
-    }
-}
-
 /// App-wide settings surfaced in the composer and menus.
 #[derive(Clone)]
 pub(crate) struct AppSettings {
@@ -192,7 +160,7 @@ pub(crate) struct AppSettings {
     pub(crate) storage_dir: SharedString,
     pub(crate) config_dir: SharedString,
     pub(crate) voice_model_url: SharedString,
-    pub(crate) theme_mode: AppThemeMode,
+    pub(crate) theme: crate::theme::ThemeSettings,
     pub(crate) mode: ChatMode,
 }
 
@@ -214,7 +182,7 @@ impl Default for AppSettings {
             storage_dir: "".into(),
             config_dir: "".into(),
             voice_model_url: "".into(),
-            theme_mode: AppThemeMode::default(),
+            theme: crate::theme::ThemeSettings::default(),
             mode: ChatMode::Chat,
         }
     }
@@ -738,7 +706,7 @@ pub(crate) struct PersistedAppSettings {
     #[serde(default)]
     pub(crate) voice_model_url: String,
     #[serde(default)]
-    pub(crate) theme_mode: AppThemeMode,
+    pub(crate) theme: crate::theme::ThemeSettings,
 }
 
 impl Default for PersistedAppSettings {
@@ -753,7 +721,7 @@ impl Default for PersistedAppSettings {
             mcp_server_enabled: HashMap::new(),
             storage_dir: String::new(),
             voice_model_url: String::new(),
-            theme_mode: AppThemeMode::default(),
+            theme: crate::theme::ThemeSettings::default(),
         }
     }
 }

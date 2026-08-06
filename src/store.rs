@@ -40,6 +40,59 @@ pub(crate) fn default_storage_dir() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join(APP_DIR))
 }
 
+pub(crate) fn theme_assets_dir() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join(APP_DIR).join("theme-assets"))
+}
+
+pub(crate) fn import_theme_background(source: &std::path::Path) -> Result<String, String> {
+    if !source.is_file() {
+        return Err("The selected background is not a readable file.".to_string());
+    }
+    let extension = source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| "The selected background has no supported extension.".to_string())?;
+    const SUPPORTED: &[&str] = &[
+        "avif", "jpg", "jpeg", "png", "gif", "webp", "tif", "tiff", "tga", "dds", "bmp", "ico",
+        "hdr", "exr", "pbm", "pam", "ppm", "pgm", "ff", "farbfeld", "qoi", "svg",
+    ];
+    if !SUPPORTED.contains(&extension.as_str()) {
+        return Err(format!("Unsupported background image format: {extension}"));
+    }
+
+    let bytes =
+        std::fs::read(source).map_err(|err| format!("Failed to read background image: {err}"))?;
+    let file_name = format!(
+        "background-{}.{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default(),
+        extension
+    );
+    let path = theme_assets_dir()
+        .ok_or_else(|| "Application data directory is unavailable.".to_string())?
+        .join(&file_name);
+    write_atomic(path, bytes)?;
+    Ok(file_name)
+}
+
+pub(crate) fn remove_theme_background(asset: &str) -> Result<(), String> {
+    let Some(path) = theme_assets_dir().map(|dir| dir.join(asset)) else {
+        return Ok(());
+    };
+    if !path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(&path).map_err(|err| {
+        format!(
+            "Failed to remove background image {}: {err}",
+            path.display()
+        )
+    })
+}
+
 fn location_path() -> Option<PathBuf> {
     Some(default_config_dir()?.join(LOCATION_FILE))
 }
