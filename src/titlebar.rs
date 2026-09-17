@@ -177,48 +177,6 @@ impl Render for TopBar {
                                     .child(self.render_title_chip(editing, title, pinned, cx)),
                             )
                         }),
-                )
-                .child(
-                    h_flex()
-                        .gap_3()
-                        .items_center()
-                        .child(
-                            h_flex()
-                                .id("plan-pill")
-                                .items_center()
-                                .gap_1p5()
-                                .px_3p5()
-                                .py_1()
-                                .rounded_full()
-                                .border_1()
-                                .border_color(border_color())
-                                .bg(surface())
-                                .text_size(px(12.5))
-                                .text_color(text_2())
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(crate::tr!("nav.free_plan"))
-                                .child(div().text_color(text_3()).child("·"))
-                                .child(
-                                    div()
-                                        .id("upgrade-link")
-                                        .text_color(text_color())
-                                        .cursor_pointer()
-                                        .child(crate::tr!("nav.upgrade"))
-                                        .on_click(|_, window, cx| {
-                                            ClaudeApp::toast(
-                                                window,
-                                                cx,
-                                                crate::tr!("nav.upgrade_to_pro"),
-                                            );
-                                        }),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.5))
-                                .text_color(text_3())
-                                .child("Clone"),
-                        ),
                 ),
         )
     }
