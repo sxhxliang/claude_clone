@@ -27,6 +27,10 @@ chat_mode:
   cowork: "Cowork"
   code: "Code"
 conversation:
+  close_tab: "Close conversation tab"
+  close_pending_title: "Stop response and close tab?"
+  close_pending_body: "The model is still responding. Closing this tab will stop the response. Conversation history will be kept."
+  stop_and_close: "Stop and close"
   untitled: "Untitled conversation"
   untitled_short: "Untitled"
   fallback_title: "Conversation %{id}"

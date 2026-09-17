@@ -27,6 +27,10 @@ chat_mode:
   cowork: "协作"
   code: "代码"
 conversation:
+  close_tab: "关闭会话标签页"
+  close_pending_title: "停止输出并关闭标签页？"
+  close_pending_body: "大模型仍在输出，关闭此标签页将停止当前输出。会话历史会保留。"
+  stop_and_close: "停止并关闭"
   untitled: "未命名对话"
   untitled_short: "未命名"
   fallback_title: "对话 %{id}"

@@ -951,6 +951,54 @@ impl ConversationPanel {
         self.start_reply_for_user(self.messages.len().saturating_sub(1), window, cx);
     }
 
+    fn close_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.stop_generation(window, cx);
+        self.sync_to_app(cx);
+        let id = self.id;
+        let app = self.app.clone();
+        window.defer(cx, move |window, cx| {
+            if let Some(app) = app.upgrade() {
+                app.update(cx, |app, cx| app.dismiss_conversation_tab(id, window, cx));
+            }
+        });
+    }
+
+    fn request_close_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pending {
+            self.close_tab(window, cx);
+            return;
+        }
+        let panel = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, _| {
+            let panel = panel.clone();
+            dialog
+                .title(crate::tr!("conversation.close_pending_title"))
+                .child(crate::tr!("conversation.close_pending_body"))
+                .footer(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("cancel-close-tab")
+                                .label(crate::tr!("common.cancel"))
+                                .on_click(|_, window, cx| {
+                                    window.close_dialog(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("confirm-close-tab")
+                                .primary()
+                                .label(crate::tr!("conversation.stop_and_close"))
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    if let Some(panel) = panel.upgrade() {
+                                        panel.update(cx, |panel, cx| panel.close_tab(window, cx));
+                                    }
+                                }),
+                        ),
+                )
+        });
+    }
+
     fn stop_generation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.pending {
             return;
@@ -3207,11 +3255,14 @@ impl BasePanel for ConversationPanel {
 
 impl Panel for ConversationPanel {
     fn tab_name(&self, _cx: &App) -> Option<SharedString> {
-        Some(self.title_or_untitled())
+        // Render the interactive title in the tab strip as well.
+        None
     }
 
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
+            .group("conversation-tab")
+            .w_full()
             .gap_1p5()
             .items_center()
             .min_w_0()
@@ -3223,10 +3274,28 @@ impl Panel for ConversationPanel {
                         .child(Icon::new(IconName::StarFill).size_3()),
                 )
             })
-            .child(div().truncate().child(self.title_or_untitled()))
+            .child(div().flex_1().truncate().child(self.title_or_untitled()))
             .when(self.pending, |this| {
                 this.child(div().size_1p5().rounded_full().bg(accent()).flex_shrink_0())
             })
+            .child(
+                div()
+                    .invisible()
+                    .group_hover("conversation-tab", |this| this.visible())
+                    .flex_shrink_0()
+                    .child(
+                        Button::new(("close-conversation-tab", self.id))
+                            .icon(IconName::Close)
+                            .ghost()
+                            .xsmall()
+                            .tooltip(crate::tr!("conversation.close_tab"))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.request_close_tab(window, cx);
+                            })),
+                    ),
+            )
     }
 
     fn dropdown_menu(

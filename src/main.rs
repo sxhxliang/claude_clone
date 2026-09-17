@@ -963,6 +963,22 @@ impl ClaudeApp {
         window.push_notification(Notification::info(crate::tr!("conversation.branched")), cx);
     }
 
+    pub(crate) fn dismiss_conversation_tab(
+        &mut self,
+        id: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(panel) = self.conversation_panels.get(&id).cloned() {
+            self.open_conversation_ids.remove(&id);
+            self.dock_area.update(cx, |dock_area, cx| {
+                dock_area.remove_panel(panel, window, cx);
+            });
+            self.save_state(cx);
+            cx.notify();
+        }
+    }
+
     fn close_conversation_tab(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_active_conversation();
 
