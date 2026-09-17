@@ -13,7 +13,7 @@ use gpui_component::{
 
 use crate::ClaudeApp;
 use crate::menus::chat_title_menu_content;
-use crate::theme::{accent, border_color, surface, text_2, text_3, text_color};
+use crate::theme::{accent, border_color, surface, text_color};
 
 pub(crate) struct TopBar {
     app: WeakEntity<ClaudeApp>,

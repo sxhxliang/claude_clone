@@ -4,14 +4,14 @@
 //! mirrors the layout captured in `demo.html`.
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, Context, Div, Entity, Hsla, InteractiveElement as _, IntoElement, ObjectFit,
-    ParentElement as _, ScrollAnchor, SharedString, StatefulInteractiveElement as _, Styled,
-    StyledImage as _, Window, div, hsla, img, linear_color_stop, linear_gradient, px, relative,
+    AnyElement, Context, Div, Entity, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ObjectFit, ParentElement as _, ScrollAnchor, SharedString, StatefulInteractiveElement as _,
+    Styled, StyledImage as _, Window, div, hsla, img, linear_color_stop, linear_gradient, px,
+    relative,
 };
 use gpui_component::{
-    Icon, IconName, WindowExt as _, h_flex,
+    GlobalState, Icon, IconName, WindowExt as _, h_flex,
     notification::Notification,
-    scroll::ScrollableElement as _,
     text::{TextView, TextViewState},
     tooltip::Tooltip,
     v_flex,
@@ -686,6 +686,10 @@ fn render_thinking_block<T: ChatViewState>(
                 .cursor_pointer()
                 .text_color(text_2())
                 .hover(|this| this.bg(file_chip_hover_bg()).text_color(text_color()))
+                .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                    window.prevent_default();
+                    GlobalState::suppress_text_selection(cx);
+                })
                 .child(
                     Icon::new(if thinking.done {
                         IconName::CircleCheck
@@ -748,21 +752,12 @@ fn render_thinking_block<T: ChatViewState>(
             this.child(
                 div()
                     .w_full()
-                    .min_h_0()
-                    .max_h(px(if thinking.done { 520. } else { 340. }))
-                    .overflow_y_scrollbar()
-                    .child(
-                        v_flex()
-                            .w_full()
-                            .min_h_0()
-                            .px_3()
-                            .pb_4()
-                            .text_size(px(13.5))
-                            .line_height(relative(1.55))
-                            .text_color(text_2())
-                            .child(TextView::new(&thinking.state).selectable(true))
-                            .child(div().h_2().flex_none()),
-                    ),
+                    .px_3()
+                    .pb_4()
+                    .text_size(px(13.5))
+                    .line_height(relative(1.55))
+                    .text_color(text_2())
+                    .child(TextView::new(&thinking.state).selectable(true)),
             )
         })
 }

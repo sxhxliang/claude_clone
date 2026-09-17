@@ -2149,14 +2149,6 @@ impl ConversationPanel {
                             .text_color(text_color())
                             .child(Textarea::new(&input).appearance(false).bordered(false)),
                     )
-                    .child(
-                        div()
-                            .size_2()
-                            .rounded_full()
-                            .bg(green())
-                            .mt_2p5()
-                            .flex_shrink_0(),
-                    ),
             )
             .child(
                 h_flex()
