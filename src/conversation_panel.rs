@@ -6,7 +6,7 @@ use futures::StreamExt as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::{
-    Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
+    Disableable as _, ElementExt as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dock::{BasePanel, Panel, PanelEvent, PanelInfo, PanelState, TabGroup},
     h_flex,
@@ -127,6 +127,8 @@ pub(crate) struct ConversationPanel {
     focus_handle: FocusHandle,
     chat_scroll_handle: ScrollHandle,
     message_scroll_anchors: Vec<ScrollAnchor>,
+    tab_title_bounds: Bounds<Pixels>,
+    panel_content_bounds: Bounds<Pixels>,
     app: WeakEntity<ClaudeApp>,
     pub(crate) tab_panel: Option<WeakEntity<TabGroup>>,
     pub(crate) id: usize,
@@ -199,6 +201,8 @@ impl ConversationPanel {
             focus_handle,
             chat_scroll_handle,
             message_scroll_anchors,
+            tab_title_bounds: Bounds::default(),
+            panel_content_bounds: Bounds::default(),
             app,
             tab_panel: None,
             id: conversation.id,
@@ -263,6 +267,45 @@ impl ConversationPanel {
                 });
             });
         }
+    }
+
+    fn activate_from_content(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.activate_in_app(window, cx);
+
+        // The dock owns its scroll handle. Reveal the title through the same
+        // horizontal wheel path as manual tab scrolling, without moving keyboard
+        // focus away from the clicked input or selectable message.
+        let title = self.tab_title_bounds;
+        let panel = self.panel_content_bounds;
+        if title.size.width <= px(0.) || panel.size.width <= px(0.) {
+            return;
+        }
+        let inset = px(32.);
+        let delta = if title.left() < panel.left() + inset {
+            panel.left() + inset - title.left()
+        } else if title.right() > panel.right() - inset {
+            panel.right() - inset - title.right()
+        } else {
+            return;
+        };
+        let event = ScrollWheelEvent {
+            position: point(panel.center().x, title.center().y),
+            delta: ScrollDelta::Pixels(point(delta, px(0.))),
+            ..Default::default()
+        };
+        window.defer(cx, move |window, cx| {
+            let pointer_position = window.mouse_position();
+            window.dispatch_event(PlatformInput::ScrollWheel(event), cx);
+            // Dispatch updates GPUI's pointer hit test. Restore it without a
+            // synthetic mouse move, which could extend a text selection.
+            window.dispatch_event(
+                PlatformInput::ScrollWheel(ScrollWheelEvent {
+                    position: pointer_position,
+                    ..Default::default()
+                }),
+                cx,
+            );
+        });
     }
 
     fn title_or_untitled(&self) -> SharedString {
@@ -3253,6 +3296,48 @@ impl BasePanel for ConversationPanel {
     }
 }
 
+// The dock tab strip locks scrolling to the horizontal axis. Preserve native
+// horizontal gestures, and translate ordinary vertical wheel input over a tab.
+fn horizontal_tab_scroll(delta: ScrollDelta) -> Option<ScrollDelta> {
+    match delta {
+        ScrollDelta::Lines(delta) if delta.x == 0. && delta.y != 0. => {
+            Some(ScrollDelta::Lines(point(delta.y, 0.)))
+        }
+        ScrollDelta::Pixels(delta) if delta.x == px(0.) && delta.y != px(0.) => {
+            Some(ScrollDelta::Pixels(point(delta.y, px(0.))))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tab_scroll_tests {
+    use super::horizontal_tab_scroll;
+    use gpui::{ScrollDelta, point, px};
+
+    #[test]
+    fn wheel_scroll_preserves_direction_and_units() {
+        for amount in [-3., 3.] {
+            let converted = horizontal_tab_scroll(ScrollDelta::Lines(point(0., amount))).unwrap();
+            assert!(matches!(converted, ScrollDelta::Lines(p) if p == point(amount, 0.)));
+            assert!(horizontal_tab_scroll(converted).is_none());
+
+            let converted =
+                horizontal_tab_scroll(ScrollDelta::Pixels(point(px(0.), px(amount)))).unwrap();
+            assert!(matches!(converted, ScrollDelta::Pixels(p) if p == point(px(amount), px(0.))));
+            assert!(horizontal_tab_scroll(converted).is_none());
+        }
+    }
+
+    #[test]
+    fn native_horizontal_and_diagonal_gestures_are_not_rewritten() {
+        for (x, y) in [(2., 0.), (-2., 3.), (0., 0.)] {
+            assert!(horizontal_tab_scroll(ScrollDelta::Lines(point(x, y))).is_none());
+            assert!(horizontal_tab_scroll(ScrollDelta::Pixels(point(px(x), px(y)))).is_none());
+        }
+    }
+}
+
 impl Panel for ConversationPanel {
     fn tab_name(&self, _cx: &App) -> Option<SharedString> {
         // Render the interactive title in the tab strip as well.
@@ -3262,7 +3347,29 @@ impl Panel for ConversationPanel {
     fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .group("conversation-tab")
+            .relative()
+            .on_prepaint({
+                let panel = cx.entity().downgrade();
+                move |bounds, _, cx| {
+                    _ = panel.update(cx, |this, _| this.tab_title_bounds = bounds);
+                }
+            })
             .w_full()
+            .h_full()
+            .on_scroll_wheel(|event, window, cx| {
+                let Some(delta) = horizontal_tab_scroll(event.delta) else {
+                    return;
+                };
+                let mut horizontal_event = event.clone();
+                horizontal_event.delta = delta;
+                cx.stop_propagation();
+                // Dispatch after this event finishes, so the dock's existing
+                // scroll viewport handles clipping, limits and tab visibility.
+                // The converted event has an x delta and is not translated again.
+                window.defer(cx, move |window, cx| {
+                    window.dispatch_event(PlatformInput::ScrollWheel(horizontal_event), cx);
+                });
+            })
             .gap_1p5()
             .items_center()
             .min_w_0()
@@ -3435,6 +3542,17 @@ impl Render for ConversationPanel {
             .relative()
             .bg(chat_bg_color())
             .track_focus(&self.focus_handle)
+            .on_prepaint({
+                let panel = cx.entity().downgrade();
+                move |bounds, _, cx| {
+                    _ = panel.update(cx, |this, _| this.panel_content_bounds = bounds);
+                }
+            })
+            .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                if event.button == MouseButton::Left {
+                    this.activate_from_content(window, cx);
+                }
+            }))
             .children(background_layer)
             .child(
                 div().flex_1().min_h_0().child(
