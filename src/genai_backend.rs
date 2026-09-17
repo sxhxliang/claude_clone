@@ -149,7 +149,7 @@ fn adapter(kind: ProviderKind) -> AdapterKind {
     }
 }
 
-fn client_for_route(kind: ProviderKind, base_url: String, api_key: String) -> Client {
+fn client_for_route(kind: ProviderKind, base_url: String, api_key: String) -> Result<Client, String> {
     let kind = adapter(kind);
     let resolver = ServiceTargetResolver::from_resolver_fn(
         move |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
@@ -165,6 +165,7 @@ fn client_for_route(kind: ProviderKind, base_url: String, api_key: String) -> Cl
     Client::builder()
         .with_service_target_resolver(resolver)
         .build()
+        .map_err(|err| format!("Failed to initialize AI client: {err}"))
 }
 
 fn build_chat_request(history: Vec<ChatTurn>) -> Result<ChatRequest, String> {
@@ -291,9 +292,16 @@ pub(crate) fn list_models(
 ) -> oneshot::Receiver<Result<Vec<String>, String>> {
     let (tx, rx) = oneshot::channel();
     runtime().spawn(async move {
+        let client = match Client::new() {
+            Ok(client) => client,
+            Err(err) => {
+                let _ = tx.send(Err(format!("Failed to initialize AI client: {err}")));
+                return;
+            }
+        };
         let result = timeout(
             MODEL_LIST_TIMEOUT,
-            Client::default().all_model_names(
+            client.all_model_names(
                 adapter(kind),
                 (
                     Endpoint::from_owned(base_url),
@@ -333,7 +341,13 @@ pub(crate) fn stream_chat(
         };
 
         let model_id = route.model_id;
-        let client = client_for_route(route.kind, route.base_url, route.api_key);
+        let client = match client_for_route(route.kind, route.base_url, route.api_key) {
+            Ok(client) => client,
+            Err(err) => {
+                let _ = tx.unbounded_send(StreamMsg::Error(err));
+                return;
+            }
+        };
         let mut options = ChatOptions::default()
             .with_capture_usage(true)
             .with_capture_reasoning_content(true)
@@ -560,7 +574,7 @@ pub(crate) fn generate_images(
         let result = async move {
             let req = build_chat_request(history)?;
             let model_id = route.model_id;
-            let client = client_for_route(route.kind, route.base_url, route.api_key);
+            let client = client_for_route(route.kind, route.base_url, route.api_key)?;
             let response = timeout(
                 IMAGE_REQUEST_TIMEOUT,
                 client.exec_chat(model_id.as_str(), req, None),
