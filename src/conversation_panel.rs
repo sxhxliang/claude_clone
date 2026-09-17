@@ -8,9 +8,9 @@ use gpui::*;
 use gpui_component::{
     Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
-    dock::{Panel, PanelEvent, PanelInfo, PanelState, TabPanel},
+    dock::{BasePanel, Panel, PanelEvent, PanelInfo, PanelState, TabGroup},
     h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, Textarea, TextareaState},
     menu::{PopupMenu, PopupMenuItem},
     notification::Notification,
     popover::Popover,
@@ -128,7 +128,7 @@ pub(crate) struct ConversationPanel {
     chat_scroll_handle: ScrollHandle,
     message_scroll_anchors: Vec<ScrollAnchor>,
     app: WeakEntity<ClaudeApp>,
-    pub(crate) tab_panel: Option<WeakEntity<TabPanel>>,
+    pub(crate) tab_panel: Option<WeakEntity<TabGroup>>,
     pub(crate) id: usize,
     title: SharedString,
     pinned: bool,
@@ -149,7 +149,7 @@ pub(crate) struct ConversationPanel {
     highlighted_artifact_target: Option<ArtifactHighlightTarget>,
     cowork_user_expanded: Vec<bool>,
     tool_expanded: HashMap<(usize, usize), bool>,
-    input: Entity<InputState>,
+    input: Entity<TextareaState>,
     setup_done: [bool; 3],
     _subscriptions: Vec<Subscription>,
 }
@@ -163,7 +163,7 @@ impl ConversationPanel {
     ) -> Self {
         let focus_handle = cx.focus_handle();
         let input = cx.new(|cx| {
-            InputState::new(window, cx)
+            TextareaState::new(window, cx)
                 .auto_grow(1, 6)
                 .placeholder(crate::tr!("chat.home_placeholder"))
         });
@@ -2056,7 +2056,7 @@ impl ConversationPanel {
                             .flex_1()
                             .text_size(px(14.))
                             .text_color(text_color())
-                            .child(Input::new(&input).appearance(false).bordered(false)),
+                            .child(Textarea::new(&input).appearance(false).bordered(false)),
                     )
                     .child(
                         div()
@@ -2309,7 +2309,7 @@ impl ConversationPanel {
                     .pt_3p5()
                     .text_size(px(14.5))
                     .text_color(text_color())
-                    .child(Input::new(&input).appearance(false).bordered(false)),
+                    .child(Textarea::new(&input).appearance(false).bordered(false)),
             )
             .child(
                 h_flex()
@@ -3163,11 +3163,49 @@ impl ChatViewState for ConversationPanel {
     }
 }
 
-impl Panel for ConversationPanel {
+impl BasePanel for ConversationPanel {
     fn panel_name(&self) -> &'static str {
         PANEL_NAME
     }
 
+    fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if active {
+            self.activate_in_app(window, cx);
+        }
+    }
+
+    fn on_added_to(
+        &mut self,
+        tab_panel: WeakEntity<TabGroup>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        self.tab_panel = Some(tab_panel);
+    }
+
+    fn on_removed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.id;
+        if let Some(app) = self.app.upgrade() {
+            window.defer(cx, move |_, cx| {
+                app.update(cx, |app, cx| app.mark_conversation_panel_closed(id, cx));
+            });
+        }
+    }
+
+    fn dump(&self, _cx: &App) -> PanelState {
+        let mut state = PanelState::new(PANEL_NAME);
+        state.info = PanelInfo::panel(
+            serde_json::to_value(ConversationPanelLayout {
+                conversation_id: self.id,
+                title: self.title.to_string(),
+            })
+            .unwrap_or(serde_json::Value::Null),
+        );
+        state
+    }
+}
+
+impl Panel for ConversationPanel {
     fn tab_name(&self, _cx: &App) -> Option<SharedString> {
         Some(self.title_or_untitled())
     }
@@ -3189,30 +3227,6 @@ impl Panel for ConversationPanel {
             .when(self.pending, |this| {
                 this.child(div().size_1p5().rounded_full().bg(accent()).flex_shrink_0())
             })
-    }
-
-    fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if active {
-            self.activate_in_app(window, cx);
-        }
-    }
-
-    fn on_added_to(
-        &mut self,
-        tab_panel: WeakEntity<TabPanel>,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        self.tab_panel = Some(tab_panel);
-    }
-
-    fn on_removed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.id;
-        if let Some(app) = self.app.upgrade() {
-            window.defer(cx, move |_, cx| {
-                app.update(cx, |app, cx| app.mark_conversation_panel_closed(id, cx));
-            });
-        }
     }
 
     fn dropdown_menu(
@@ -3306,18 +3320,6 @@ impl Panel for ConversationPanel {
                 },
             ),
         )
-    }
-
-    fn dump(&self, _cx: &App) -> PanelState {
-        let mut state = PanelState::new(self);
-        state.info = PanelInfo::panel(
-            serde_json::to_value(ConversationPanelLayout {
-                conversation_id: self.id,
-                title: self.title.to_string(),
-            })
-            .unwrap_or(serde_json::Value::Null),
-        );
-        state
     }
 
     fn inner_padding(&self, _cx: &App) -> bool {

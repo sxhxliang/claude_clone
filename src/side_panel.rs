@@ -6,7 +6,7 @@ use gpui_component::{
     ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
-    dock::{Panel, PanelEvent},
+    dock::{BasePanel, Panel, PanelEvent},
     h_flex,
     input::{Input, InputState},
     notification::Notification,
@@ -289,11 +289,13 @@ impl SidePanel {
     }
 }
 
-impl Panel for SidePanel {
+impl BasePanel for SidePanel {
     fn panel_name(&self) -> &'static str {
         self.name
     }
+}
 
+impl Panel for SidePanel {
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         self.localized_title()
     }

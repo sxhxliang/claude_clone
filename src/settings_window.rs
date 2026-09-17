@@ -6,7 +6,7 @@ use gpui_component::{
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{Editor, EditorState, Input, InputEvent, InputState},
     notification::Notification,
     popover::{Popover, PopoverState},
     scroll::ScrollableElement as _,
@@ -44,7 +44,7 @@ pub(crate) struct SettingsWindow {
     app: WeakEntity<ClaudeApp>,
     provider_settings: Entity<ProviderSettings>,
     theme_settings: Entity<ThemeSettingsView>,
-    mcp_input: Entity<InputState>,
+    mcp_input: Entity<EditorState>,
     mcp_status: SharedString,
     mcp_error: Option<SharedString>,
     mcp_dirty: bool,
@@ -112,8 +112,8 @@ impl SettingsWindow {
             ),
         };
         let mcp_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .code_editor("json")
+            EditorState::new(window, cx)
+                .language("json")
                 .line_number(true)
                 .soft_wrap(true)
                 .default_value(mcp_text)
@@ -1332,7 +1332,7 @@ impl SettingsWindow {
                             .border_1()
                             .border_color(border_color())
                             .child(
-                                Input::new(&self.mcp_input)
+                                Editor::new(&self.mcp_input)
                                     .h_full()
                                     .appearance(false)
                                     .bordered(false),

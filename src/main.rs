@@ -5,8 +5,8 @@ use gpui_component::{
     button::{Button, ButtonVariants as _},
     dialog::{DialogFooter, DialogHeader, DialogTitle},
     dock::{
-        DockArea, DockAreaState, DockEvent, DockItem, DockPlacement, Panel, PanelInfo, PanelStyle,
-        PanelView, TabPanel, register_panel,
+        DockArea, DockAreaState, DockEvent, DockLayout, DockPlacement, DockSkin, InsertTarget,
+        PanelInfo, PanelStyle, TabGroup, panel_handle, register_panel,
     },
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -14,13 +14,12 @@ use gpui_component::{
     scroll::ScrollableElement as _,
     v_flex,
 };
-use gpui_component_assets::Assets;
+use gpui_kit_assets::Assets;
 use gpui_updater::{EngineConfig, GitHubSource, Version};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 
 rust_i18n::i18n!("locales", fallback = "en");
@@ -110,7 +109,7 @@ pub struct ClaudeApp {
     next_project_id: usize,
     conversation_panels: HashMap<usize, Entity<ConversationPanel>>,
     open_conversation_ids: HashSet<usize>,
-    active_tab_panel: Option<WeakEntity<TabPanel>>,
+    active_tab_panel: Option<WeakEntity<TabGroup>>,
     last_layout_state: DockAreaState,
     last_save_error: Option<SharedString>,
     _save_layout_task: Option<Task<()>>,
@@ -168,9 +167,7 @@ struct ProjectPickerDialog {
 impl ProjectPickerDialog {
     fn new(app: WeakEntity<ClaudeApp>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(crate::tr!("project.new_name_placeholder"))
-                .auto_grow(1, 1)
+            InputState::new(window, cx).placeholder(crate::tr!("project.new_name_placeholder"))
         });
         let subscriptions = vec![cx.subscribe_in(&input, window, {
             move |this: &mut ProjectPickerDialog, _, event: &InputEvent, window, cx| {
@@ -519,7 +516,7 @@ impl ClaudeApp {
     pub(crate) fn activate_conversation_panel(
         &mut self,
         conversation: &Conversation,
-        tab_panel: Option<WeakEntity<TabPanel>>,
+        tab_panel: Option<WeakEntity<TabGroup>>,
         cx: &mut Context<Self>,
     ) {
         if let Some(tab_panel) = tab_panel {
@@ -536,7 +533,7 @@ impl ClaudeApp {
         cx.notify();
     }
 
-    fn tab_panel_contains_focus(tab_panel: &Entity<TabPanel>, window: &Window, cx: &App) -> bool {
+    fn tab_panel_contains_focus(tab_panel: &Entity<TabGroup>, window: &Window, cx: &App) -> bool {
         let focus_handle = tab_panel.read(cx).focus_handle(cx);
         focus_handle.is_focused(window) || focus_handle.contains_focused(window, cx)
     }
@@ -544,9 +541,9 @@ impl ClaudeApp {
     /// The live, in-tree tab panels that currently host open conversations.
     ///
     /// We derive targets from the open panels' own `tab_panel` refs rather than
-    /// walking the static center `DockItem` tree, which goes stale once tab
+    /// walking the static center layout tree, which goes stale once tab
     /// panels self-remove on close.
-    fn open_tab_panels(&self, cx: &App) -> Vec<Entity<TabPanel>> {
+    fn open_tab_panels(&self, cx: &App) -> Vec<Entity<TabGroup>> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();
         for id in &self.open_conversation_ids {
@@ -564,23 +561,23 @@ impl ClaudeApp {
         result
     }
 
-    fn focused_tab_panel(&self, window: &Window, cx: &App) -> Option<Entity<TabPanel>> {
+    fn focused_tab_panel(&self, window: &Window, cx: &App) -> Option<Entity<TabGroup>> {
         self.open_tab_panels(cx)
             .into_iter()
             .find(|tab_panel| Self::tab_panel_contains_focus(tab_panel, window, cx))
     }
 
-    fn first_tab_panel(&self, cx: &App) -> Option<Entity<TabPanel>> {
+    fn first_tab_panel(&self, cx: &App) -> Option<Entity<TabGroup>> {
         self.open_tab_panels(cx).into_iter().next()
     }
 
-    fn contains_tab_panel(&self, target: &Entity<TabPanel>, cx: &App) -> bool {
+    fn contains_tab_panel(&self, target: &Entity<TabGroup>, cx: &App) -> bool {
         self.open_tab_panels(cx)
             .iter()
             .any(|tab_panel| tab_panel == target)
     }
 
-    fn target_tab_panel(&self, window: &Window, cx: &App) -> Option<Entity<TabPanel>> {
+    fn target_tab_panel(&self, window: &Window, cx: &App) -> Option<Entity<TabGroup>> {
         if let Some(tab_panel) = self.focused_tab_panel(window, cx) {
             return Some(tab_panel);
         }
@@ -635,26 +632,36 @@ impl ClaudeApp {
             self.target_tab_panel(window, cx)
         };
         let panel_entity = panel.clone();
-        let panel_view: Arc<dyn PanelView> = Arc::new(panel);
-        let weak_dock_area = self.dock_area.downgrade();
+        let panel_id = panel.entity_id().into();
+        let target_node = target_tab_panel.as_ref().map(|group| group.read(cx).node());
 
         self.dock_area.update(cx, |dock_area, cx| {
             if rebuild_center {
                 dock_area.set_center(
-                    DockItem::tabs(vec![panel_view.clone()], &weak_dock_area, window, cx),
+                    DockLayout::tabs().panel_view(panel_handle(panel), cx),
                     window,
                     cx,
                 );
-            } else if let Some(tab_panel) = target_tab_panel.clone() {
-                tab_panel.update(cx, |tab_panel, cx| {
-                    tab_panel.add_panel(panel_view.clone(), window, cx);
-                });
             } else {
-                dock_area.set_center(
-                    DockItem::tabs(vec![panel_view.clone()], &weak_dock_area, window, cx),
+                dock_area.add_panel_view(
+                    panel_handle(panel),
+                    DockPlacement::Center,
+                    None,
                     window,
                     cx,
                 );
+                if let Some(node) = target_node {
+                    dock_area.move_panel(
+                        panel_id,
+                        InsertTarget::Tabs {
+                            node,
+                            ix: None,
+                            activate: true,
+                        },
+                        window,
+                        cx,
+                    );
+                }
             }
         });
         self.active_tab_panel = target_tab_panel
@@ -678,19 +685,24 @@ impl ClaudeApp {
             return Vec::new();
         };
 
-        let state = tab_panel.read(cx).dump(cx);
-        let Some(current_ix) = state.children.iter().position(|child| {
+        let children = tab_panel
+            .read(cx)
+            .panels()
+            .iter()
+            .map(|panel| panel.dump(cx))
+            .collect::<Vec<_>>();
+        let Some(current_ix) = children.iter().position(|child| {
             Self::conversation_panel_layout(&child.info)
                 .is_some_and(|layout| layout.conversation_id == id)
         }) else {
             return Vec::new();
         };
 
-        let left = state.children[..current_ix]
+        let left = children[..current_ix]
             .iter()
             .filter_map(|child| Self::conversation_panel_layout(&child.info))
             .map(|layout| layout.conversation_id);
-        let right = state.children[current_ix + 1..]
+        let right = children[current_ix + 1..]
             .iter()
             .filter_map(|child| Self::conversation_panel_layout(&child.info))
             .map(|layout| layout.conversation_id);
@@ -720,10 +732,7 @@ impl ClaudeApp {
             .iter()
             .filter_map(|target_id| {
                 self.open_conversation_ids.remove(target_id);
-                self.conversation_panels
-                    .get(target_id)
-                    .cloned()
-                    .map(|panel| Arc::new(panel) as Arc<dyn PanelView>)
+                self.conversation_panels.get(target_id).cloned()
             })
             .collect::<Vec<_>>();
 
@@ -733,7 +742,7 @@ impl ClaudeApp {
 
         self.dock_area.update(cx, |dock_area, cx| {
             for panel_view in panel_views {
-                dock_area.remove_panel_from_all_docks(panel_view, window, cx);
+                dock_area.remove_panel(panel_view, window, cx);
             }
         });
         self.save_state(cx);
@@ -753,9 +762,9 @@ impl ClaudeApp {
         self.activate_conversation_panel(&snapshot, tab_panel, cx);
 
         if self.open_conversation_ids.contains(&id) {
-            // Upstream gpui-component does not expose a public API for activating
-            // an existing tab by panel view. Keep the conversation state in sync;
-            // newly opened conversations are still added and activated below.
+            self.dock_area.update(cx, |dock_area, cx| {
+                dock_area.select_panel(panel.entity_id().into(), window, cx);
+            });
             if let Some(tab_panel) = panel.read(cx).tab_panel.clone().and_then(|tp| tp.upgrade()) {
                 self.active_tab_panel = Some(tab_panel.downgrade());
             }
@@ -964,9 +973,9 @@ impl ClaudeApp {
         self.conversations.remove(ix);
         self.open_conversation_ids.remove(&id);
         if let Some(panel) = self.conversation_panels.remove(&id) {
-            let panel_view: Arc<dyn PanelView> = Arc::new(panel);
+            let panel_view = panel;
             self.dock_area.update(cx, |dock_area, cx| {
-                dock_area.remove_panel_from_all_docks(panel_view, window, cx);
+                dock_area.remove_panel(panel_view, window, cx);
             });
         }
 
@@ -1111,7 +1120,8 @@ impl ClaudeApp {
         register_panel(
             cx,
             conversation_panel::PANEL_NAME,
-            move |_, _, info, window, cx| {
+            move |context, window, cx| {
+                let info = context.info();
                 let layout = Self::conversation_panel_layout(info).unwrap_or_else(|| {
                     let conversation_id = conversation_load_state.borrow().next_conversation_id();
                     ConversationPanelLayout {
@@ -1136,14 +1146,14 @@ impl ClaudeApp {
                     .borrow_mut()
                     .conversation_panels
                     .insert(id, panel.clone());
-                Box::new(panel)
+                panel_handle(panel)
             },
         );
 
         register_panel(cx, side_panel::PROJECTS_PANEL_NAME, {
             let projects_app = app.clone();
-            move |_, _, _, window, cx| {
-                Box::new(cx.new(|cx| SidePanel::projects(projects_app.clone(), window, cx)))
+            move |_, window, cx| {
+                panel_handle(cx.new(|cx| SidePanel::projects(projects_app.clone(), window, cx)))
             }
         });
 
@@ -1151,8 +1161,8 @@ impl ClaudeApp {
         register_panel(
             cx,
             side_panel::ARTIFACTS_PANEL_NAME,
-            move |_, _, _, window, cx| {
-                Box::new(cx.new(|cx| SidePanel::artifacts(artifacts_app.clone(), window, cx)))
+            move |_, window, cx| {
+                panel_handle(cx.new(|cx| SidePanel::artifacts(artifacts_app.clone(), window, cx)))
             },
         );
     }
@@ -1163,16 +1173,9 @@ impl ClaudeApp {
         cx: &mut Context<Self>,
     ) {
         dock_area.update(cx, |dock_area, cx| {
-            dock_area.set_dock_collapsible(
-                Edges {
-                    left: true,
-                    bottom: false,
-                    right: true,
-                    ..Default::default()
-                },
-                window,
-                cx,
-            );
+            dock_area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Right, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
         });
     }
 
@@ -1196,64 +1199,52 @@ impl ClaudeApp {
             conversation_panels.insert(id, panel);
         }
 
-        let weak_dock_area = dock_area.downgrade();
         let mut panel_items = conversations
             .iter()
             .take(3)
             .filter_map(|conversation| conversation_panels.get(&conversation.id))
-            .map(|panel| {
-                DockItem::tabs(
-                    vec![Arc::new(panel.clone()) as Arc<dyn PanelView>],
-                    &weak_dock_area,
-                    window,
-                    cx,
-                )
-            })
+            .map(|panel| DockLayout::tabs().panel_view(panel_handle(panel.clone()), cx))
             .collect::<Vec<_>>();
         let center = match panel_items.len() {
-            0 => DockItem::h_split(Vec::new(), &weak_dock_area, window, cx),
+            0 => DockLayout::h_split(),
             1 => panel_items.remove(0),
-            2 => DockItem::h_split(panel_items, &weak_dock_area, window, cx),
+            2 => panel_items
+                .into_iter()
+                .fold(DockLayout::h_split(), |layout, child| {
+                    layout.child(child, None)
+                }),
             _ => {
                 let first = panel_items.remove(0);
-                DockItem::h_split(
-                    vec![
-                        first,
-                        DockItem::v_split(panel_items, &weak_dock_area, window, cx).size(px(420.)),
-                    ],
-                    &weak_dock_area,
-                    window,
-                    cx,
-                )
+                let right = panel_items
+                    .into_iter()
+                    .fold(DockLayout::v_split(), |layout, child| {
+                        layout.child(child, None)
+                    });
+                DockLayout::h_split()
+                    .child(first, None)
+                    .child(right, Some(px(420.)))
             }
         };
-        let left_dock = DockItem::tab(
-            cx.new(|cx| SidePanel::projects(app.clone(), window, cx)),
-            &weak_dock_area,
-            window,
-            cx,
-        );
-        let right_dock = DockItem::tab(
-            cx.new(|cx| SidePanel::artifacts(app.clone(), window, cx)),
-            &weak_dock_area,
-            window,
-            cx,
-        );
+        let projects = cx.new(|cx| SidePanel::projects(app.clone(), window, cx));
+        let artifacts = cx.new(|cx| SidePanel::artifacts(app.clone(), window, cx));
+        let left_dock = DockLayout::tabs().panel_view(panel_handle(projects), cx);
+        let right_dock = DockLayout::tabs().panel_view(panel_handle(artifacts), cx);
         dock_area.update(cx, |dock_area, cx| {
-            dock_area.set_version(DOCK_LAYOUT_VERSION, window, cx);
+            dock_area.set_version(Some(DOCK_LAYOUT_VERSION), cx);
             dock_area.set_center(center, window, cx);
-            dock_area.set_left_dock(left_dock, Some(px(240.)), false, window, cx);
-            dock_area.set_right_dock(right_dock, Some(px(300.)), false, window, cx);
-            dock_area.set_dock_collapsible(
-                Edges {
-                    left: true,
-                    bottom: false,
-                    right: true,
-                    ..Default::default()
-                },
-                window,
-                cx,
-            );
+            dock_area.set_dock(DockPlacement::Left, left_dock, window, cx);
+            dock_area.set_dock_size(DockPlacement::Left, px(240.), window, cx);
+            if dock_area.is_dock_open(DockPlacement::Left) {
+                dock_area.toggle_dock(DockPlacement::Left, window, cx);
+            }
+            dock_area.set_dock(DockPlacement::Right, right_dock, window, cx);
+            dock_area.set_dock_size(DockPlacement::Right, px(300.), window, cx);
+            if dock_area.is_dock_open(DockPlacement::Right) {
+                dock_area.toggle_dock(DockPlacement::Right, window, cx);
+            }
+            dock_area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Right, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
         });
     }
 
@@ -1279,7 +1270,7 @@ impl ClaudeApp {
     fn active_conversation_from_layout(
         conversation_panels: &HashMap<usize, Entity<ConversationPanel>>,
         cx: &App,
-    ) -> Option<(Conversation, Option<WeakEntity<TabPanel>>)> {
+    ) -> Option<(Conversation, Option<WeakEntity<TabGroup>>)> {
         for panel in conversation_panels.values() {
             let Some(tab_panel) = panel
                 .read(cx)
@@ -1293,7 +1284,7 @@ impl ClaudeApp {
             let is_active = tab_panel
                 .read(cx)
                 .active_panel(cx)
-                .is_some_and(|active| active.panel_id(cx) == panel.entity_id());
+                .is_some_and(|active| active.panel_id(cx) == panel.entity_id().into());
             if is_active {
                 return Some((panel.read(cx).snapshot(), Some(tab_panel.downgrade())));
             }
@@ -1368,15 +1359,13 @@ impl ClaudeApp {
             .map(|c| SharedString::from(c.model_id.clone()))
             .unwrap_or_default();
 
-        let dock_area = cx.new(|cx| {
-            DockArea::new(
-                "claude-conversation-dock",
-                Some(DOCK_LAYOUT_VERSION),
-                window,
-                cx,
-            )
-            .panel_style(PanelStyle::TabBar)
-        });
+        let (dock_area, dock_skin) = DockSkin::dock_area(
+            "claude-conversation-dock",
+            Some(DOCK_LAYOUT_VERSION),
+            window,
+            cx,
+        );
+        dock_skin.set_panel_style(PanelStyle::TabBar, cx);
         let app = cx.entity().downgrade();
 
         let load_state = Rc::new(RefCell::new(DockLoadState::new(
@@ -2219,26 +2208,22 @@ impl ClaudeApp {
         let app = cx.entity().downgrade();
         self.dock_area.update(cx, |dock_area, cx| {
             if dock_area.has_dock(DockPlacement::Left) {
-                if !dock_area.is_dock_open(DockPlacement::Left, cx) {
+                if !dock_area.is_dock_open(DockPlacement::Left) {
                     dock_area.toggle_dock(DockPlacement::Left, window, cx);
                 }
                 return;
             }
 
-            let weak_dock_area = cx.entity().downgrade();
             let panel = cx.new(|cx| SidePanel::projects(app.clone(), window, cx));
-            let dock = DockItem::tab(panel, &weak_dock_area, window, cx);
-            dock_area.set_left_dock(dock, Some(px(280.)), true, window, cx);
-            dock_area.set_dock_collapsible(
-                Edges {
-                    left: true,
-                    bottom: false,
-                    right: true,
-                    ..Default::default()
-                },
-                window,
-                cx,
-            );
+            let dock = DockLayout::tabs().panel_view(panel_handle(panel), cx);
+            dock_area.set_dock(DockPlacement::Left, dock, window, cx);
+            dock_area.set_dock_size(DockPlacement::Left, px(280.), window, cx);
+            if !dock_area.is_dock_open(DockPlacement::Left) {
+                dock_area.toggle_dock(DockPlacement::Left, window, cx);
+            }
+            dock_area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Right, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
         });
         cx.notify();
     }
@@ -2247,26 +2232,22 @@ impl ClaudeApp {
         let app = cx.entity().downgrade();
         self.dock_area.update(cx, |dock_area, cx| {
             if dock_area.has_dock(DockPlacement::Right) {
-                if !dock_area.is_dock_open(DockPlacement::Right, cx) {
+                if !dock_area.is_dock_open(DockPlacement::Right) {
                     dock_area.toggle_dock(DockPlacement::Right, window, cx);
                 }
                 return;
             }
 
-            let weak_dock_area = cx.entity().downgrade();
             let panel = cx.new(|cx| SidePanel::artifacts(app.clone(), window, cx));
-            let dock = DockItem::tab(panel, &weak_dock_area, window, cx);
-            dock_area.set_right_dock(dock, Some(px(320.)), true, window, cx);
-            dock_area.set_dock_collapsible(
-                Edges {
-                    left: true,
-                    bottom: false,
-                    right: true,
-                    ..Default::default()
-                },
-                window,
-                cx,
-            );
+            let dock = DockLayout::tabs().panel_view(panel_handle(panel), cx);
+            dock_area.set_dock(DockPlacement::Right, dock, window, cx);
+            dock_area.set_dock_size(DockPlacement::Right, px(320.), window, cx);
+            if !dock_area.is_dock_open(DockPlacement::Right) {
+                dock_area.toggle_dock(DockPlacement::Right, window, cx);
+            }
+            dock_area.set_dock_collapsible(DockPlacement::Left, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Right, true, window, cx);
+            dock_area.set_dock_collapsible(DockPlacement::Bottom, false, window, cx);
         });
         cx.notify();
     }
